@@ -1,0 +1,96 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "A user of the platform.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "The unique user ID from Firebase Auth." },
+        "displayName": { "type": "string", "description": "The user's display name." },
+        "systemRole": { "type": "string", "enum": ["SuperAdmin", "Standard"], "description": "The user's role in the system." },
+        "joinedLeagueIds": { "type": "array", "items": { "type": "string" }, "description": "List of league IDs the user has joined." }
+      },
+      "required": ["uid", "displayName", "systemRole", "joinedLeagueIds"]
+    },
+    "GlobalSettings": {
+      "title": "GlobalSettings",
+      "description": "Global configuration for the platform.",
+      "type": "object",
+      "properties": {
+        "picksOpenTime": { "type": "string", "format": "date-time", "description": "When picks become available." },
+        "picksLockTime": { "type": "string", "format": "date-time", "description": "When picks are locked for the contest." }
+      },
+      "required": ["picksOpenTime", "picksLockTime"]
+    },
+    "Team": {
+      "title": "Team",
+      "description": "An NBA team with its seeding information.",
+      "type": "object",
+      "properties": {
+        "teamName": { "type": "string" },
+        "conference": { "type": "string", "enum": ["East", "West"] },
+        "seed": { "type": "integer", "description": "1-10" },
+        "apiTeamId": { "type": "integer", "description": "API-NBA team ID." }
+      },
+      "required": ["teamName", "conference", "seed", "apiTeamId"]
+    },
+    "SeriesResult": {
+      "title": "SeriesResult",
+      "description": "The outcome of a playoff series.",
+      "type": "object",
+      "properties": {
+        "round": { "type": "integer" },
+        "advancingTeamId": { "type": "string" },
+        "eliminatedTeamId": { "type": "string" },
+        "totalGamesPlayed": { "type": "integer" },
+        "actualFinalsTotalPoints": { "type": "integer" },
+        "lastDataChanged": { "type": "string", "format": "date-time" }
+      },
+      "required": ["round", "advancingTeamId", "eliminatedTeamId", "totalGamesPlayed", "lastDataChanged"]
+    },
+    "League": {
+      "title": "League",
+      "description": "A specific contest league.",
+      "type": "object",
+      "properties": {
+        "leagueName": { "type": "string" },
+        "commissionerId": { "type": "string" },
+        "inviteCode": { "type": "string" },
+        "lastCalculated": { "type": "string", "format": "date-time" },
+        "pointConfig": {
+          "type": "object",
+          "properties": {
+            "round1": { "type": "integer" },
+            "round2": { "type": "integer" },
+            "round3": { "type": "integer" },
+            "finals": { "type": "integer" },
+            "playIn": { "type": "integer" },
+            "exactGamesBonus": { "type": "integer" }
+          }
+        }
+      },
+      "required": ["leagueName", "commissionerId", "inviteCode", "lastCalculated", "pointConfig"]
+    },
+    "Bracket": {
+      "title": "Bracket",
+      "description": "A user's predictions for a league.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "leagueId": { "type": "string" },
+        "picks": { "type": "array" },
+        "playInPicks": { "type": "array" },
+        "tiebreakerPrediction": { "type": "integer" }
+      },
+      "required": ["userId", "leagueId", "picks", "playInPicks", "tiebreakerPrediction"]
+    }
+  },
+  "firestore": {
+    "globalSettings/config": { "schema": "GlobalSettings", "description": "Global configuration document." },
+    "users/{userId}": { "schema": "User", "description": "User profile documents." },
+    "teams/{teamId}": { "schema": "Team", "description": "NBA team documents." },
+    "seriesResults/{seriesId}": { "schema": "SeriesResult", "description": "Playoff series outcome documents." },
+    "leagues/{leagueId}": { "schema": "League", "description": "League contest documents." },
+    "brackets/{bracketId}": { "schema": "Bracket", "description": "User bracket prediction documents." }
+  }
+}

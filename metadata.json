@@ -1,0 +1,5 @@
+{
+  "name": "NBA Playoffs Bracket Challenge",
+  "description": "A multi-tenant NBA playoffs bracket challenge platform with Play-In logic and real-time scoring.",
+  "requestFramePermissions": []
+}
