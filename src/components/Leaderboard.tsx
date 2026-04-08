@@ -101,7 +101,7 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({ leagueId }) => {
       {entries.length === 0 ? (
         <div className="py-12 text-center bg-white/5 border border-dashed border-white/10 rounded-3xl">
           <p className="text-gray-500 font-medium">
-            {isLocked ? "No brackets submitted yet." : "Leaderboard and picks are hidden until the brackets lock."}
+            No brackets submitted yet.
           </p>
         </div>
       ) : (
@@ -143,7 +143,13 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({ leagueId }) => {
             <div className="flex items-center gap-12">
               <div className="w-16 text-center">
                 <span className="text-xs font-mono font-bold text-gray-400">
-                  {entry.tiebreakerPrediction} <span className="text-[8px] text-gray-600 uppercase">PTS</span>
+                  {isLocked ? (
+                    <>
+                      {entry.tiebreakerPrediction} <span className="text-[8px] text-gray-600 uppercase">PTS</span>
+                    </>
+                  ) : (
+                    <span className="text-[10px] text-gray-600 uppercase italic">Hidden</span>
+                  )}
                 </span>
               </div>
               <div className="w-12 text-right">
