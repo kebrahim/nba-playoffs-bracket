@@ -7,13 +7,15 @@ interface LeagueLobbyProps {
   onJoinLeague: (code: string) => void;
   onCreateLeague: () => void;
   onSelectLeague: (leagueId: string) => void;
+  isAdmin?: boolean;
 }
 
 export const LeagueLobby: React.FC<LeagueLobbyProps> = ({
   leagues,
   onJoinLeague,
   onCreateLeague,
-  onSelectLeague
+  onSelectLeague,
+  isAdmin = false
 }) => {
   const [inviteCode, setInviteCode] = useState('');
 
@@ -42,13 +44,15 @@ export const LeagueLobby: React.FC<LeagueLobbyProps> = ({
               <Plus className="w-4 h-4 text-white" />
             </button>
           </div>
-          <button 
-            onClick={onCreateLeague}
-            className="bg-white text-black font-bold px-6 py-3 rounded-xl text-sm hover:bg-gray-200 transition-all flex items-center gap-2"
-          >
-            <Trophy className="w-4 h-4" />
-            Create League
-          </button>
+          {isAdmin && (
+            <button 
+              onClick={onCreateLeague}
+              className="bg-white text-black font-bold px-6 py-3 rounded-xl text-sm hover:bg-gray-200 transition-all flex items-center gap-2"
+            >
+              <Trophy className="w-4 h-4" />
+              Create League
+            </button>
+          )}
         </div>
       </div>
 

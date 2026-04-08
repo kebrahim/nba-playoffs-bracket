@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { db } from '../firebase';
-import { collection, query, where, orderBy, onSnapshot, getDocs } from 'firebase/firestore';
+import { collection, query, where, orderBy, onSnapshot, getDocs, doc } from 'firebase/firestore';
 import { Bracket, User } from '../types/database';
 import { Trophy, Medal, ChevronRight, Hash } from 'lucide-react';
 
@@ -13,11 +14,22 @@ interface LeaderboardEntry extends Bracket {
 }
 
 export const Leaderboard: React.FC<LeaderboardProps> = ({ leagueId }) => {
+  const navigate = useNavigate();
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isLocked, setIsLocked] = useState(false);
 
   useEffect(() => {
     if (!leagueId) return;
+
+    // First check if picks are locked globally
+    const settingsRef = doc(db, 'globalSettings', 'config');
+    const unsubSettings = onSnapshot(settingsRef, (snap) => {
+      if (snap.exists()) {
+        const lockTime = snap.data().picksLockTime.toDate();
+        setIsLocked(new Date() > lockTime);
+      }
+    });
 
     const bracketsQuery = query(
       collection(db, 'brackets'),
@@ -29,7 +41,6 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({ leagueId }) => {
       const bracketData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Bracket));
       
       // Fetch user names for these brackets
-      // In a real app, you might denormalize this or use a more efficient way
       const userIds = [...new Set(bracketData.map(b => b.userId))];
       const userMap: Record<string, string> = {};
       
@@ -50,10 +61,18 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({ leagueId }) => {
       setLoading(false);
     }, (error) => {
       console.error("Leaderboard error:", error);
+      // If we get a permission error, it's likely because picks are not locked yet.
+      // We'll just show an empty state or handle it gracefully.
+      if (error.code === 'permission-denied') {
+        setEntries([]);
+      }
       setLoading(false);
     });
 
-    return () => unsubscribe();
+    return () => {
+      unsubSettings();
+      unsubscribe();
+    };
   }, [leagueId]);
 
   if (loading) {
@@ -81,13 +100,18 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({ leagueId }) => {
 
       {entries.length === 0 ? (
         <div className="py-12 text-center bg-white/5 border border-dashed border-white/10 rounded-3xl">
-          <p className="text-gray-500 font-medium">No brackets submitted yet.</p>
+          <p className="text-gray-500 font-medium">
+            {isLocked ? "No brackets submitted yet." : "Leaderboard and picks are hidden until the brackets lock."}
+          </p>
         </div>
       ) : (
         entries.map((entry, index) => (
           <div 
             key={entry.id}
-            className={`group relative flex items-center justify-between px-6 py-4 bg-white/5 border border-white/10 rounded-2xl transition-all hover:border-orange-500/30 ${
+            onClick={() => isLocked && navigate(`/league/${leagueId}/user/${entry.userId}`)}
+            className={`group relative flex items-center justify-between px-6 py-4 bg-white/5 border border-white/10 rounded-2xl transition-all ${
+              isLocked ? 'cursor-pointer hover:border-orange-500/50 hover:bg-white/10' : ''
+            } ${
               index === 0 ? 'bg-gradient-to-r from-orange-500/10 to-transparent border-orange-500/20' : ''
             }`}
           >
@@ -104,9 +128,12 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({ leagueId }) => {
                 )}
               </div>
               <div className="flex flex-col">
-                <span className="font-bold uppercase italic tracking-tight group-hover:text-orange-500 transition-colors">
-                  {entry.userName}
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="font-bold uppercase italic tracking-tight group-hover:text-orange-500 transition-colors">
+                    {entry.userName}
+                  </span>
+                  {isLocked && <ChevronRight className="w-3 h-3 text-orange-500 opacity-0 group-hover:opacity-100 transition-all" />}
+                </div>
                 <span className="text-[10px] font-bold text-gray-500 uppercase tracking-tighter">
                   {entry.userId.slice(0, 8)}...
                 </span>

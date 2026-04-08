@@ -180,7 +180,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 };
 
 const LobbyView = () => {
-  const { user, userData } = useAuth();
+  const { user, userData, isAdmin } = useAuth();
   const navigate = useNavigate();
   const { leagues } = useLeagues(user?.uid, userData?.joinedLeagueIds);
 
@@ -271,6 +271,7 @@ const LobbyView = () => {
       onJoinLeague={handleJoinLeague}
       onCreateLeague={handleCreateLeague}
       onSelectLeague={(id) => navigate(`/league/${id}`)}
+      isAdmin={isAdmin}
     />
   );
 };
@@ -322,6 +323,14 @@ export default function App() {
             } />
 
             <Route path="/league/:leagueId" element={
+              <ProtectedRoute>
+                <Layout>
+                  <LeagueBracketView />
+                </Layout>
+              </ProtectedRoute>
+            } />
+
+            <Route path="/league/:leagueId/user/:userId" element={
               <ProtectedRoute>
                 <Layout>
                   <LeagueBracketView />

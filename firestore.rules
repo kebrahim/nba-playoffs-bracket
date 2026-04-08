@@ -10,34 +10,47 @@ service cloud.firestore {
       return isAuthenticated() && request.auth.uid == userId;
     }
 
+    function isSuperAdmin() {
+      return isAuthenticated() && 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.systemRole == 'SuperAdmin';
+    }
+
+    function isLocked() {
+      return request.time > get(/databases/$(database)/documents/globalSettings/config).data.picksLockTime;
+    }
+
     // Teams and Series Results are publicly readable
     match /teams/{teamId} {
       allow read: if true;
-      allow write: if false; // Only server/admin can write
+      allow write: if isSuperAdmin();
     }
     
     match /seriesResults/{seriesId} {
       allow read: if true;
-      allow write: if false; // Only server/admin can write
+      allow write: if isSuperAdmin();
     }
     
     match /globalSettings/{configId} {
       allow read: if true;
-      allow write: if false; // Only server/admin can write
+      allow write: if isSuperAdmin();
     }
 
-    // Brackets are owned by users
-    match /brackets/{bracketId} {
-      allow read: if true; // Publicly viewable brackets
-      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
-      allow update, delete: if isOwner(resource.data.userId);
-    }
+      // Brackets are owned by users
+      match /brackets/{bracketId} {
+        // Users can see their own picks. 
+        // Others can only see picks AFTER the lock time.
+        // Super admins can always see everything.
+        allow read: if isOwner(resource.data.userId) || isLocked() || isSuperAdmin();
+        allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+        allow update: if isOwner(resource.data.userId);
+        allow delete: if isOwner(resource.data.userId) || isSuperAdmin();
+      }
     
     // Leagues
     match /leagues/{leagueId} {
       allow read: if true;
       allow create: if isAuthenticated() && 
-        request.resource.data.commissionerId == request.auth.uid;
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.systemRole == 'SuperAdmin';
       allow update, delete: if isAuthenticated() && 
         (resource.data.commissionerId == request.auth.uid || 
          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.systemRole == 'SuperAdmin');

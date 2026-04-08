@@ -135,13 +135,30 @@ const useBracketData = (leagueId: string | undefined, userId: string | undefined
 };
 
 export const LeagueBracketView: React.FC = () => {
-  const { leagueId } = useParams<{ leagueId: string }>();
+  const { leagueId, userId: paramUserId } = useParams<{ leagueId: string, userId?: string }>();
   const navigate = useNavigate();
   const { user, userData } = useAuth();
-  const { teams, bracket, actualResults, league, loading } = useBracketData(leagueId, user?.uid);
+  
+  // If a userId is in the URL, we view that user's bracket. Otherwise, we view our own.
+  const targetUserId = paramUserId || user?.uid;
+  const isViewingSelf = !paramUserId || paramUserId === user?.uid;
+
+  const { teams, bracket, actualResults, league, loading } = useBracketData(leagueId, targetUserId);
   const [activeTab, setActiveTab] = useState<'bracket' | 'leaderboard'>('bracket');
   const [pendingBracket, setPendingBracket] = useState<Bracket | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [isLocked, setIsLocked] = useState(false);
+
+  useEffect(() => {
+    const settingsRef = doc(db, 'globalSettings', 'config');
+    const unsub = onSnapshot(settingsRef, (snap) => {
+      if (snap.exists()) {
+        const lockTime = snap.data().picksLockTime.toDate();
+        setIsLocked(new Date() > lockTime);
+      }
+    });
+    return () => unsub();
+  }, []);
 
   useEffect(() => {
     // Reset pending changes when switching leagues or if bracket is externally updated
@@ -159,7 +176,7 @@ export const LeagueBracketView: React.FC = () => {
   const currentBracket = pendingBracket || bracket;
 
   const handlePick = (matchupId: string, teamId: string, length: number) => {
-    if (!user || !leagueId) return;
+    if (!user || !leagueId || !isViewingSelf || isLocked) return;
 
     const isPlayIn = matchupId.startsWith('PI_');
     const newBracket: any = currentBracket ? { ...currentBracket } : {
@@ -201,7 +218,7 @@ export const LeagueBracketView: React.FC = () => {
   };
 
   const handleTiebreakerChange = (value: number) => {
-    if (!user || !leagueId) return;
+    if (!user || !leagueId || !isViewingSelf || isLocked) return;
     const newBracket: any = currentBracket ? { ...currentBracket } : {
       userId: user.uid,
       leagueId: leagueId,
@@ -215,7 +232,7 @@ export const LeagueBracketView: React.FC = () => {
   };
 
   const handleSave = async () => {
-    if (!user || !leagueId || !pendingBracket) return;
+    if (!user || !leagueId || !pendingBracket || !isViewingSelf || isLocked) return;
     setIsSaving(true);
     try {
       const bracketId = bracket?.id || `${user.uid}_${leagueId}`;
@@ -278,7 +295,14 @@ export const LeagueBracketView: React.FC = () => {
               {league?.leagueName}
             </h2>
             <div className="flex items-center gap-2 mt-1">
-              <span className="text-[10px] font-black uppercase tracking-widest text-orange-500 bg-orange-500/10 px-2 py-0.5 rounded">Live</span>
+              {!isViewingSelf && (
+                <span className="text-[10px] font-black uppercase tracking-widest text-blue-500 bg-blue-500/10 px-2 py-0.5 rounded">
+                  Viewing: {bracket?.userId === user?.uid ? 'My Bracket' : 'Opponent Bracket'}
+                </span>
+              )}
+              <span className="text-[10px] font-black uppercase tracking-widest text-orange-500 bg-orange-500/10 px-2 py-0.5 rounded">
+                {isLocked ? 'Locked' : 'Live'}
+              </span>
               <span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Invite Code: {league?.inviteCode}</span>
             </div>
           </div>
@@ -314,7 +338,7 @@ export const LeagueBracketView: React.FC = () => {
           userPicks={[...(currentBracket?.picks || []), ...(currentBracket?.playInPicks || [])] as any}
           actualResults={actualResults}
           onPick={handlePick}
-          isLocked={false}
+          isLocked={isLocked || !isViewingSelf}
           tiebreakerPrediction={currentBracket?.tiebreakerPrediction || 0}
           onTiebreakerChange={handleTiebreakerChange}
         />

@@ -4,21 +4,9 @@ import path from 'node:path';
 import fs from 'node:fs';
 import cron from 'node-cron';
 import axios from 'axios';
-import { initializeApp } from 'firebase/app';
-import { 
-  getFirestore, 
-  collection, 
-  doc, 
-  setDoc, 
-  getDoc, 
-  getDocs, 
-  updateDoc, 
-  query, 
-  where, 
-  writeBatch, 
-  serverTimestamp, 
-  Timestamp 
-} from 'firebase/firestore';
+import admin from 'firebase-admin';
+import { initializeApp, getApps, getApp } from 'firebase-admin/app';
+import { getFirestore } from 'firebase-admin/firestore';
 import { fileURLToPath } from 'node:url';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -38,27 +26,42 @@ try {
   console.error('Error loading firebase-applet-config.json:', error);
 }
 
-// Initialize Firebase Client SDK on the server
-// This uses the API Key and App ID, avoiding service account permission issues.
-let app: any = null;
+// Initialize Firebase Admin SDK on the server
 let db: any = null;
 
 if (firebaseConfig) {
   try {
-    console.log('Initializing Firebase Client SDK on server...');
+    console.log('Initializing Firebase Admin SDK on server...');
     console.log('Project ID:', firebaseConfig.projectId);
-    app = initializeApp(firebaseConfig);
-    db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+    
+    let adminApp;
+    if (getApps().length === 0) {
+      adminApp = initializeApp({
+        projectId: firebaseConfig.projectId,
+      });
+    } else {
+      adminApp = getApp();
+    }
+    
+    // Use the named database if provided
+    if (firebaseConfig.firestoreDatabaseId) {
+      db = getFirestore(adminApp, firebaseConfig.firestoreDatabaseId);
+    } else {
+      db = getFirestore(adminApp);
+    }
+    console.log('Firebase Admin SDK initialized successfully.');
   } catch (error) {
-    console.error('Error initializing Firebase:', error);
+    console.error('Error initializing Firebase Admin:', error);
   }
+} else {
+  console.error('Firebase config is missing, cannot initialize Admin SDK.');
 }
 
 async function startServer() {
   const expressApp = express();
   // Use the PORT environment variable if provided (required for Cloud Run), 
   // otherwise default to 3000 (required for AI Studio Build environment).
-  const PORT = process.env.PORT || 3000;
+  const PORT = Number(process.env.PORT) || 3000;
   
   console.log(`Starting server on port ${PORT}...`);
 
@@ -70,7 +73,11 @@ async function startServer() {
   // Manual Trigger for Scoring (for testing)
   expressApp.post('/api/calculate-scores', async (req, res) => {
     try {
-      await recalculateAllLeagues();
+      if (!db) {
+        const reason = !firebaseConfig ? 'Firebase config missing' : 'Admin SDK failed to initialize';
+        throw new Error(`Database not initialized. ${reason}`);
+      }
+      await recalculateAllLeagues(db);
       res.json({ status: 'success', message: 'Scoring recalculation completed' });
     } catch (error) {
       console.error('Scoring error:', error);
@@ -81,7 +88,11 @@ async function startServer() {
   // Manual Trigger for NBA Data Sync
   expressApp.post('/api/sync-results', async (req, res) => {
     try {
-      await syncNbaResults();
+      if (!db) {
+        const reason = !firebaseConfig ? 'Firebase config missing' : 'Admin SDK failed to initialize';
+        throw new Error(`Database not initialized. ${reason}`);
+      }
+      await syncNbaResults(db);
       res.json({ status: 'success', message: 'NBA results sync completed' });
     } catch (error) {
       console.error('Sync error:', error);
@@ -92,7 +103,11 @@ async function startServer() {
   // Manual Trigger for NBA Standings Sync
   expressApp.post('/api/sync-standings', async (req, res) => {
     try {
-      await syncNbaStandings();
+      if (!db) {
+        const reason = !firebaseConfig ? 'Firebase config missing' : 'Admin SDK failed to initialize';
+        throw new Error(`Database not initialized. ${reason}`);
+      }
+      await syncNbaStandings(db);
       res.json({ status: 'success', message: 'NBA standings sync completed' });
     } catch (error) {
       console.error('Standings Sync error:', error);
@@ -143,7 +158,8 @@ async function startServer() {
   // Seed initial data for testing
   expressApp.post('/api/admin/seed-data', async (req, res) => {
     try {
-      const batch = writeBatch(db);
+      if (!db) throw new Error('Database not initialized');
+      const batch = db.batch();
 
       // Seed Teams
       const teams = [
@@ -154,27 +170,27 @@ async function startServer() {
       ];
 
       teams.forEach(team => {
-        const ref = doc(db, 'teams', team.id);
+        const ref = db!.collection('teams').doc(team.id);
         batch.set(ref, team);
       });
 
       // Seed Series Results (Round 1)
       const series = [
-        { id: 'R1_E_1', round: 1, team1Id: 'bos', team2Id: 'mia', totalGamesPlayed: 0, lastDataChanged: serverTimestamp() },
-        { id: 'R1_W_1', round: 1, team1Id: 'okc', team2Id: 'nop', totalGamesPlayed: 0, lastDataChanged: serverTimestamp() },
+        { id: 'R1_E_1', round: 1, team1Id: 'bos', team2Id: 'mia', totalGamesPlayed: 0, lastDataChanged: admin.firestore.FieldValue.serverTimestamp() },
+        { id: 'R1_W_1', round: 1, team1Id: 'okc', team2Id: 'nop', totalGamesPlayed: 0, lastDataChanged: admin.firestore.FieldValue.serverTimestamp() },
       ];
 
       series.forEach(s => {
-        const ref = doc(db, 'seriesResults', s.id);
+        const ref = db!.collection('seriesResults').doc(s.id);
         batch.set(ref, s);
       });
 
       // Seed Global Settings
-      const settingsRef = doc(db, 'globalSettings', 'config');
+      const settingsRef = db.collection('globalSettings').doc('config');
       batch.set(settingsRef, {
-        picksOpenTime: Timestamp.fromDate(new Date('2024-04-01')),
-        picksLockTime: Timestamp.fromDate(new Date('2024-04-20')),
-        lastDataChanged: serverTimestamp()
+        picksOpenTime: admin.firestore.Timestamp.fromDate(new Date('2024-04-01')),
+        picksLockTime: admin.firestore.Timestamp.fromDate(new Date('2024-04-20')),
+        lastDataChanged: admin.firestore.FieldValue.serverTimestamp()
       });
 
       await batch.commit();
@@ -184,8 +200,6 @@ async function startServer() {
       res.status(500).json({ status: 'error', message: 'Failed to seed data.', details: error instanceof Error ? error.message : String(error) });
     }
   });
-
-  // Vite middleware for development
   if (process.env.NODE_ENV !== 'production') {
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
@@ -213,10 +227,10 @@ async function startServer() {
 // ===============================================================
 cron.schedule('0 9 * * *', async () => {
   console.log('Running API-NBA Sync Job...');
-  await syncNbaResults();
+  if (db) await syncNbaResults(db);
 });
 
-async function syncNbaStandings() {
+async function syncNbaStandings(db: admin.firestore.Firestore) {
   try {
     const apiKey = process.env.RAPIDAPI_KEY;
     if (!apiKey) {
@@ -277,8 +291,7 @@ async function syncNbaStandings() {
       return;
     }
 
-    const batch = writeBatch(db);
-    const teamsRef = collection(db, 'teams');
+    const updates: { ref: admin.firestore.DocumentReference, data: any }[] = [];
 
     for (const group of normalizedGroups) {
       const conference = group.name; // "Eastern Conference" or "Western Conference"
@@ -303,19 +316,29 @@ async function syncNbaStandings() {
         
         // Use a consistent ID
         const teamId = teamData.abbreviation?.toLowerCase() || String(teamData.id);
-        const ref = doc(db, 'teams', teamId);
+        const ref = db.collection('teams').doc(teamId);
         
-        batch.set(ref, {
-          teamName: teamData.displayName,
-          conference: shortConf,
-          seed: seed,
-          apiTeamId: Number(teamData.id),
-          logoUrl: teamData.logos?.[0]?.href || ''
-        }, { merge: true });
+        updates.push({
+          ref,
+          data: {
+            teamName: teamData.displayName,
+            conference: shortConf,
+            seed: seed,
+            apiTeamId: Number(teamData.id),
+            logoUrl: teamData.logos?.[0]?.href || ''
+          }
+        });
       });
     }
 
-    await batch.commit();
+    // Commit in chunks of 500
+    for (let i = 0; i < updates.length; i += 500) {
+      const batch = db.batch();
+      const chunk = updates.slice(i, i + 500);
+      chunk.forEach(u => batch.set(u.ref, u.data, { merge: true }));
+      await batch.commit();
+    }
+
     console.log('NBA standings sync completed. Teams updated.');
   } catch (error) {
     console.error('NBA Standings Sync Error:', error);
@@ -323,7 +346,7 @@ async function syncNbaStandings() {
   }
 }
 
-async function syncNbaResults() {
+async function syncNbaResults(db: admin.firestore.Firestore) {
   try {
     const apiKey = process.env.RAPIDAPI_KEY;
     if (!apiKey) {
@@ -376,7 +399,7 @@ async function syncNbaResults() {
     }
 
     // Fetch all teams to map apiTeamId to our teamId
-    const teamsSnapshot = await getDocs(collection(db, 'teams'));
+    const teamsSnapshot = await db.collection('teams').get();
     const teamsMap: Record<string, string> = {};
     teamsSnapshot.docs.forEach(d => {
       const data = d.data();
@@ -386,12 +409,10 @@ async function syncNbaResults() {
     });
 
     // Fetch all series results
-    const seriesResultsRef = collection(db, 'seriesResults');
-    const seriesSnapshot = await getDocs(seriesResultsRef);
+    const seriesSnapshot = await db.collection('seriesResults').get();
     const seriesList = seriesSnapshot.docs.map(d => ({ id: d.id, ...d.data() }));
 
-    let dataChanged = false;
-    const batch = writeBatch(db);
+    const seriesUpdates: admin.firestore.DocumentReference[] = [];
 
     for (const game of completedGames) {
       const competitors = game.competitors || [];
@@ -413,22 +434,21 @@ async function syncNbaResults() {
 
       if (series) {
         console.log(`Updating series: ${series.id} with game result.`);
-        // In a real app, we'd increment wins for the winning team
-        // and check if they reached 4 wins to set advancingTeamId.
-        // For this implementation, we'll at least update the lastDataChanged.
-        const seriesRef = doc(db, 'seriesResults', series.id);
-        batch.update(seriesRef, {
-          lastDataChanged: serverTimestamp()
-        });
-        dataChanged = true;
+        seriesUpdates.push(db.collection('seriesResults').doc(series.id));
       }
     }
 
-    if (dataChanged) {
-      await batch.commit();
+    if (seriesUpdates.length > 0) {
+      for (let i = 0; i < seriesUpdates.length; i += 500) {
+        const batch = db.batch();
+        const chunk = seriesUpdates.slice(i, i + 500);
+        chunk.forEach(ref => batch.update(ref, { lastDataChanged: admin.firestore.FieldValue.serverTimestamp() }));
+        await batch.commit();
+      }
+      
       // Update global settings to trigger scoring engine
-      await updateDoc(doc(db, 'globalSettings', 'config'), {
-        lastDataChanged: serverTimestamp()
+      await db.collection('globalSettings').doc('config').update({
+        lastDataChanged: admin.firestore.FieldValue.serverTimestamp()
       });
       console.log('NBA results sync completed and triggered scoring engine.');
     } else {
@@ -442,14 +462,14 @@ async function syncNbaResults() {
 // ===============================================================
 // Idempotent Multi-Tenant Scoring Engine
 // ===============================================================
-async function recalculateAllLeagues() {
-  const globalConfigSnap = await getDoc(doc(db, 'globalSettings', 'config'));
+async function recalculateAllLeagues(db: admin.firestore.Firestore) {
+  const globalConfigSnap = await db.collection('globalSettings').doc('config').get();
   const globalConfig = globalConfigSnap.data();
   if (!globalConfig) return;
 
   const lastDataChanged = globalConfig.lastDataChanged?.toDate() || new Date(0);
 
-  const leaguesSnap = await getDocs(collection(db, 'leagues'));
+  const leaguesSnap = await db.collection('leagues').get();
   
   for (const leagueDoc of leaguesSnap.docs) {
     const leagueData = leagueDoc.data();
@@ -458,18 +478,16 @@ async function recalculateAllLeagues() {
     // Only recalculate if data changed since last calculation
     if (lastDataChanged > lastCalculated) {
       console.log(`Recalculating scores for league: ${leagueData.leagueName}`);
-      await calculateLeagueScores(leagueDoc.id, leagueData);
+      await calculateLeagueScores(db, leagueDoc.id, leagueData);
     }
   }
 }
 
-async function calculateLeagueScores(leagueId: string, leagueData: any) {
-  const seriesResultsSnap = await getDocs(collection(db, 'seriesResults'));
+async function calculateLeagueScores(db: admin.firestore.Firestore, leagueId: string, leagueData: any) {
+  const seriesResultsSnap = await db.collection('seriesResults').get();
   const results = seriesResultsSnap.docs.map(d => ({ id: d.id, ...d.data() } as any));
 
-  const bracketsQuery = query(collection(db, 'brackets'), where('leagueId', '==', leagueId));
-  const bracketsSnap = await getDocs(bracketsQuery);
-  const batch = writeBatch(db);
+  const bracketsSnap = await db.collection('brackets').where('leagueId', '==', leagueId).get();
 
   const bracketScores: { id: string, score: number, tiebreakerDiff: number, tiebreakerValue: number }[] = [];
 
@@ -527,22 +545,25 @@ async function calculateLeagueScores(leagueId: string, leagueData: any) {
     return 0; // Deadlock
   });
 
-  // Update Brackets in Batch
-  bracketScores.forEach((item, index) => {
-    const ref = doc(db, 'brackets', item.id);
-    batch.update(ref, {
-      totalScore: item.score,
-      rank: index + 1
+  // Update Brackets in Chunks
+  for (let i = 0; i < bracketScores.length; i += 500) {
+    const batch = db.batch();
+    const chunk = bracketScores.slice(i, i + 500);
+    chunk.forEach((item, indexInChunk) => {
+      const globalIndex = i + indexInChunk;
+      const ref = db.collection('brackets').doc(item.id);
+      batch.update(ref, {
+        totalScore: item.score,
+        rank: globalIndex + 1
+      });
     });
-  });
+    await batch.commit();
+  }
 
   // Update League LastCalculated
-  const leagueRef = doc(db, 'leagues', leagueId);
-  batch.update(leagueRef, {
-    lastCalculated: serverTimestamp()
+  await db.collection('leagues').doc(leagueId).update({
+    lastCalculated: admin.firestore.FieldValue.serverTimestamp()
   });
-
-  await batch.commit();
 }
 
 console.log('Calling startServer()...');
