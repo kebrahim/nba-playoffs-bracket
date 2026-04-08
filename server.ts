@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import express from 'express';
 import path from 'path';
+import fs from 'fs';
 import cron from 'node-cron';
 import axios from 'axios';
 import { initializeApp } from 'firebase/app';
@@ -19,10 +20,13 @@ import {
   Timestamp 
 } from 'firebase/firestore';
 import { fileURLToPath } from 'url';
-import firebaseConfig from './firebase-applet-config.json' with { type: 'json' };
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// Load Firebase configuration robustly
+const configPath = path.resolve(process.cwd(), 'firebase-applet-config.json');
+const firebaseConfig = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
 
 // Initialize Firebase Client SDK on the server
 // This uses the API Key and App ID, avoiding service account permission issues.
@@ -35,7 +39,9 @@ const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 
 async function startServer() {
   const expressApp = express();
-  const PORT = 3000;
+  // Use the PORT environment variable if provided (required for Cloud Run), 
+  // otherwise default to 3000 (required for AI Studio Build environment).
+  const PORT = process.env.PORT || 3000;
 
   // API Routes
   expressApp.get('/api/health', (req, res) => {
