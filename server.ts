@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import express from 'express';
-import path from 'path';
-import fs from 'fs';
+import path from 'node:path';
+import fs from 'node:fs';
 import cron from 'node-cron';
 import axios from 'axios';
 import { initializeApp } from 'firebase/app';
@@ -19,29 +19,48 @@ import {
   serverTimestamp, 
   Timestamp 
 } from 'firebase/firestore';
-import { fileURLToPath } from 'url';
+import { fileURLToPath } from 'node:url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // Load Firebase configuration robustly
-const configPath = path.resolve(process.cwd(), 'firebase-applet-config.json');
-const firebaseConfig = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+let firebaseConfig: any = null;
+try {
+  const configPath = path.resolve(process.cwd(), 'firebase-applet-config.json');
+  if (fs.existsSync(configPath)) {
+    firebaseConfig = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+    console.log('Firebase config loaded successfully.');
+  } else {
+    console.warn('firebase-applet-config.json not found at', configPath);
+  }
+} catch (error) {
+  console.error('Error loading firebase-applet-config.json:', error);
+}
 
 // Initialize Firebase Client SDK on the server
 // This uses the API Key and App ID, avoiding service account permission issues.
-console.log('Initializing Firebase Client SDK on server...');
-console.log('Project ID:', firebaseConfig.projectId);
-console.log('Database ID:', firebaseConfig.firestoreDatabaseId);
+let app: any = null;
+let db: any = null;
 
-const app = initializeApp(firebaseConfig);
-const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+if (firebaseConfig) {
+  try {
+    console.log('Initializing Firebase Client SDK on server...');
+    console.log('Project ID:', firebaseConfig.projectId);
+    app = initializeApp(firebaseConfig);
+    db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+  } catch (error) {
+    console.error('Error initializing Firebase:', error);
+  }
+}
 
 async function startServer() {
   const expressApp = express();
   // Use the PORT environment variable if provided (required for Cloud Run), 
   // otherwise default to 3000 (required for AI Studio Build environment).
   const PORT = process.env.PORT || 3000;
+  
+  console.log(`Starting server on port ${PORT}...`);
 
   // API Routes
   expressApp.get('/api/health', (req, res) => {
@@ -182,8 +201,10 @@ async function startServer() {
     });
   }
 
+  console.log('Server routes initialized. Preparing to listen...');
+  
   expressApp.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+    console.log(`SUCCESS: Server is now listening on 0.0.0.0:${PORT}`);
   });
 }
 
@@ -524,4 +545,8 @@ async function calculateLeagueScores(leagueId: string, leagueData: any) {
   await batch.commit();
 }
 
-startServer();
+console.log('Calling startServer()...');
+startServer().catch(err => {
+  console.error('FATAL: Failed to start server:', err);
+  process.exit(1);
+});
