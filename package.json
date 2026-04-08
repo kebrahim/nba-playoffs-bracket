@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "tsx server.ts",
     "start": "node dist/server.js",
-    "build": "vite build && esbuild server.ts --bundle --platform=node --format=esm --outfile=dist/server.js --external:vite --external:express --external:firebase --external:axios --external:node-cron --external:dotenv --external:path --external:fs --external:url",
+    "build": "vite build && esbuild server.ts --bundle --platform=node --format=esm --outfile=dist/server.js --external:vite --external:express --external:firebase --external:firebase-admin --external:axios --external:node-cron --external:dotenv --external:path --external:fs --external:url --external:node:*",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit"
   },
