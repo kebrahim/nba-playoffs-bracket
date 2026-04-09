@@ -100,7 +100,7 @@ export const TournamentBracket: React.FC<TournamentBracketProps> = ({
           <div className="flex flex-col sm:flex-row items-center gap-8">
             <div className="flex flex-col gap-6">
               <div className="space-y-1">
-                <span className="text-[8px] font-bold text-gray-400 uppercase tracking-widest ml-2">Game 1 (7 vs 8)</span>
+                <span className="text-[8px] font-bold text-gray-400 uppercase tracking-widest ml-2">Game 1 (7 vs 8) — Winner to 7th</span>
                 <MatchupCard 
                   matchupId={`PI_${c}_A`}
                   team1={piA_t1 || null}
