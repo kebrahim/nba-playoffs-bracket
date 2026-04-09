@@ -94,37 +94,51 @@ export const TournamentBracket: React.FC<TournamentBracketProps> = ({
     return (
       <div className="flex flex-col lg:flex-row gap-12 items-center justify-center py-8">
         {/* Play-In Section */}
-          <div className="space-y-4 bg-white/70 backdrop-blur-xl p-8 rounded-[2.5rem] border border-black/10 w-full max-w-md lg:w-auto shadow-2xl relative overflow-hidden">
+        <div className="space-y-4 bg-white/70 backdrop-blur-xl p-8 rounded-[2.5rem] border border-black/10 w-full lg:w-auto shadow-2xl relative overflow-hidden">
           <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-orange-500/20 to-transparent" />
           <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-gray-500 mb-6 text-center lg:text-left">Play-In Tournament</h3>
-          <div className="flex flex-col items-center lg:items-start gap-6">
-            <MatchupCard 
-              matchupId={`PI_${c}_A`}
-              team1={piA_t1 || null}
-              team2={piA_t2 || null}
-              userPick={getPick(`PI_${c}_A`) as any}
-              actualResult={getResult(`PI_${c}_A`)}
-              onPick={(teamId, len) => onPick(`PI_${c}_A`, teamId, len)}
-              isLocked={isLocked}
-            />
-            <MatchupCard 
-              matchupId={`PI_${c}_B`}
-              team1={piB_t1 || null}
-              team2={piB_t2 || null}
-              userPick={getPick(`PI_${c}_B`) as any}
-              actualResult={getResult(`PI_${c}_B`)}
-              onPick={(teamId, len) => onPick(`PI_${c}_B`, teamId, len)}
-              isLocked={isLocked}
-            />
-            <MatchupCard 
-              matchupId={`PI_${c}_C`}
-              team1={piLoserA || null}
-              team2={piWinnerB || null}
-              userPick={getPick(`PI_${c}_C`) as any}
-              actualResult={getResult(`PI_${c}_C`)}
-              onPick={(teamId, len) => onPick(`PI_${c}_C`, teamId, len)}
-              isLocked={isLocked}
-            />
+          <div className="flex flex-col sm:flex-row items-center gap-8">
+            <div className="flex flex-col gap-6">
+              <div className="space-y-1">
+                <span className="text-[8px] font-bold text-gray-400 uppercase tracking-widest ml-2">Game 1 (7 vs 8)</span>
+                <MatchupCard 
+                  matchupId={`PI_${c}_A`}
+                  team1={piA_t1 || null}
+                  team2={piA_t2 || null}
+                  userPick={getPick(`PI_${c}_A`) as any}
+                  actualResult={getResult(`PI_${c}_A`)}
+                  onPick={(teamId, len) => onPick(`PI_${c}_A`, teamId, len)}
+                  isLocked={isLocked}
+                />
+              </div>
+              <div className="space-y-1">
+                <span className="text-[8px] font-bold text-gray-400 uppercase tracking-widest ml-2">Game 2 (9 vs 10)</span>
+                <MatchupCard 
+                  matchupId={`PI_${c}_B`}
+                  team1={piB_t1 || null}
+                  team2={piB_t2 || null}
+                  userPick={getPick(`PI_${c}_B`) as any}
+                  actualResult={getResult(`PI_${c}_B`)}
+                  onPick={(teamId, len) => onPick(`PI_${c}_B`, teamId, len)}
+                  isLocked={isLocked}
+                />
+              </div>
+            </div>
+
+            <div className="flex flex-col justify-center">
+              <div className="space-y-1">
+                <span className="text-[8px] font-bold text-gray-400 uppercase tracking-widest ml-2">Game 3 (Winner to 8th)</span>
+                <MatchupCard 
+                  matchupId={`PI_${c}_C`}
+                  team1={piLoserA || null}
+                  team2={piWinnerB || null}
+                  userPick={getPick(`PI_${c}_C`) as any}
+                  actualResult={getResult(`PI_${c}_C`)}
+                  onPick={(teamId, len) => onPick(`PI_${c}_C`, teamId, len)}
+                  isLocked={isLocked}
+                />
+              </div>
+            </div>
           </div>
         </div>
 

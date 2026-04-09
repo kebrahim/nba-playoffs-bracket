@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { db } from '../firebase';
 import { collection, query, where, orderBy, onSnapshot, getDocs, doc } from 'firebase/firestore';
-import { Bracket, User } from '../types/database';
+import { Bracket, User, League } from '../types/database';
 import { Trophy, Medal, ChevronRight, Hash } from 'lucide-react';
 
 interface LeaderboardProps {
@@ -31,38 +31,71 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({ leagueId }) => {
       }
     });
 
-    const bracketsQuery = query(
-      collection(db, 'brackets'),
-      where('leagueId', '==', leagueId),
-      orderBy('totalScore', 'desc')
-    );
+    // Listen to the league to get the current participants list
+    const leagueRef = doc(db, 'leagues', leagueId);
+    const unsubLeague = onSnapshot(leagueRef, async (leagueSnap) => {
+      if (!leagueSnap.exists()) return;
+      const leagueData = leagueSnap.data() as League;
+      const participants = leagueData.participants || [];
 
-    const unsubscribe = onSnapshot(bracketsQuery, async (snapshot) => {
-      const bracketData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Bracket));
+      // Fetch all brackets for this league
+      const bracketsQuery = query(
+        collection(db, 'brackets'),
+        where('leagueId', '==', leagueId)
+      );
       
-      // Fetch user names for these brackets
-      const userIds = [...new Set(bracketData.map(b => b.userId))];
+      const bracketsSnap = await getDocs(bracketsQuery);
+      const bracketsMap: Record<string, Bracket> = {};
+      bracketsSnap.forEach(doc => {
+        bracketsMap[doc.data().userId] = { id: doc.id, ...doc.data() } as Bracket;
+      });
+
+      // Fetch user details for all participants
       const userMap: Record<string, string> = {};
-      
-      if (userIds.length > 0) {
-        const usersSnap = await getDocs(query(collection(db, 'users'), where('uid', 'in', userIds)));
-        usersSnap.forEach(doc => {
-          const data = doc.data() as User;
-          userMap[data.uid] = data.displayName;
-        });
+      if (participants.length > 0) {
+        // Firestore 'in' query limit is 30, but for simplicity we'll assume small leagues or handle in chunks if needed.
+        // For now, let's just fetch them. If participants > 30, we'd need multiple queries.
+        const chunks = [];
+        for (let i = 0; i < participants.length; i += 30) {
+          chunks.push(participants.slice(i, i + 30));
+        }
+
+        for (const chunk of chunks) {
+          const usersSnap = await getDocs(query(collection(db, 'users'), where('uid', 'in', chunk)));
+          usersSnap.forEach(doc => {
+            const data = doc.data() as User;
+            userMap[data.uid] = data.displayName;
+          });
+        }
       }
 
-      const entriesWithNames = bracketData.map(b => ({
-        ...b,
-        userName: userMap[b.userId] || 'Unknown User'
-      }));
+      // Merge participants with their brackets (if any)
+      const allEntries: LeaderboardEntry[] = participants.map(uid => {
+        const bracket = bracketsMap[uid];
+        return {
+          id: bracket?.id || `temp_${uid}`,
+          userId: uid,
+          leagueId: leagueId,
+          picks: bracket?.picks || [],
+          playInPicks: bracket?.playInPicks || [],
+          tiebreakerPrediction: bracket?.tiebreakerPrediction || 0,
+          totalScore: bracket?.totalScore || 0,
+          userName: userMap[uid] || 'Unknown User'
+        };
+      });
 
-      setEntries(entriesWithNames);
+      // Sort by score desc, then by name
+      allEntries.sort((a, b) => {
+        if ((b.totalScore || 0) !== (a.totalScore || 0)) {
+          return (b.totalScore || 0) - (a.totalScore || 0);
+        }
+        return a.userName.localeCompare(b.userName);
+      });
+
+      setEntries(allEntries);
       setLoading(false);
     }, (error) => {
       console.error("Leaderboard error:", error);
-      // If we get a permission error, it's likely because picks are not locked yet.
-      // We'll just show an empty state or handle it gracefully.
       if (error.code === 'permission-denied') {
         setEntries([]);
       }
@@ -71,7 +104,7 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({ leagueId }) => {
 
     return () => {
       unsubSettings();
-      unsubscribe();
+      unsubLeague();
     };
   }, [leagueId]);
 
@@ -134,9 +167,6 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({ leagueId }) => {
                   </span>
                   {isLocked && <ChevronRight className="w-3 h-3 text-orange-500 opacity-0 group-hover:opacity-100 transition-all" />}
                 </div>
-                <span className="text-[10px] font-bold text-gray-500 uppercase tracking-tighter">
-                  {entry.userId.slice(0, 8)}...
-                </span>
               </div>
             </div>
 
