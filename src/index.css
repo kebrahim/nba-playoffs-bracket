@@ -1,5 +1,27 @@
 @import "tailwindcss";
 
+body {
+  background-color: #f4d08b; /* Light golden oak base */
+  background-image: 
+    /* Subtle Center Glow */
+    radial-gradient(circle at 50% 50%, rgba(245,132,38,0.1) 0%, transparent 70%),
+    /* Court Lines - Dark for contrast on light floor */
+    linear-gradient(to right, transparent 49.9%, rgba(0,0,0,0.15) 49.9%, rgba(0,0,0,0.15) 50.1%, transparent 50.1%),
+    radial-gradient(circle at 50% 50%, transparent 11.9%, rgba(0,0,0,0.1) 11.9%, rgba(0,0,0,0.1) 12.1%, transparent 12.1%),
+    radial-gradient(circle at -15% 50%, transparent 44.9%, rgba(0,0,0,0.08) 44.9%, rgba(0,0,0,0.08) 45.1%, transparent 45.1%),
+    radial-gradient(circle at 115% 50%, transparent 44.9%, rgba(0,0,0,0.08) 44.9%, rgba(0,0,0,0.08) 45.1%, transparent 45.1%),
+    /* Parquet Squares - alternating shades */
+    linear-gradient(90deg, rgba(0,0,0,0.02) 50%, transparent 50%),
+    linear-gradient(rgba(0,0,0,0.02) 50%, transparent 50%),
+    /* Parquet Grid Lines */
+    linear-gradient(90deg, rgba(0,0,0,0.1) 1px, transparent 1px),
+    linear-gradient(0deg, rgba(0,0,0,0.1) 1px, transparent 1px),
+    /* Wood Grain Texture */
+    repeating-linear-gradient(90deg, rgba(0,0,0,0.01) 0px, rgba(0,0,0,0.01) 1px, transparent 1px, transparent 8px);
+  background-attachment: fixed;
+  background-size: 100% 100%, 100% 100%, 100% 100%, 100% 100%, 100% 100%, 200px 200px, 200px 200px, 100px 100px, 100px 100px, 100% 100%;
+}
+
 @layer utilities {
   .no-scrollbar::-webkit-scrollbar {
     display: none;

@@ -117,20 +117,25 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   }, []);
 
   return (
-    <div className="min-h-screen bg-gray-950 text-white font-sans selection:bg-orange-500/30">
-      <header className="border-b border-white/10 bg-black/50 backdrop-blur-md sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
+    <div className="min-h-screen text-gray-900 font-sans selection:bg-orange-500/30">
+      <header className="border-b border-black/5 bg-white/60 backdrop-blur-xl sticky top-0 z-50">
+        <div className="max-w-7xl mx-auto px-4 h-20 flex items-center justify-between">
           <div className="flex items-center gap-8">
             <div 
-              className="flex items-center gap-3 cursor-pointer"
+              className="flex items-center gap-4 cursor-pointer group"
               onClick={() => navigate('/')}
             >
-              <div className="bg-orange-500 p-2 rounded-lg shadow-[0_0_15px_rgba(245,132,38,0.4)]">
-                <Trophy className="w-6 h-6 text-white" />
+              <div className="bg-orange-500 p-2.5 rounded-xl shadow-[0_0_20px_rgba(245,132,38,0.3)] group-hover:shadow-[0_0_30px_rgba(245,132,38,0.5)] transition-all duration-500 transform group-hover:rotate-12">
+                <Trophy className="w-7 h-7 text-white" />
               </div>
-              <h1 className="text-xl font-bold tracking-tighter uppercase italic">
-                NBA <span className="text-orange-500">Playoffs</span> Bracket
-              </h1>
+              <div className="flex flex-col">
+                <h1 className="text-2xl font-black tracking-tighter uppercase italic leading-none">
+                  NBA <span className="text-orange-500">Playoffs</span>
+                </h1>
+                <span className="text-[10px] font-bold tracking-[0.3em] uppercase text-gray-500 leading-none mt-1">
+                  Bracket Challenge
+                </span>
+              </div>
             </div>
             
             {isAdmin && (
@@ -146,10 +151,10 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
           <div className="flex items-center gap-4">
             {user ? (
               <div className="flex items-center gap-3">
-                <span className="text-sm text-gray-400 hidden sm:inline">{userData?.displayName || user.email}</span>
+                <span className="text-sm text-gray-600 hidden sm:inline">{userData?.displayName || user.email}</span>
                 <button 
                   onClick={() => auth.signOut()}
-                  className="text-xs bg-white/5 hover:bg-white/10 border border-white/10 px-3 py-1.5 rounded-full transition-all"
+                  className="text-xs bg-black/5 hover:bg-black/10 border border-black/10 px-3 py-1.5 rounded-full transition-all"
                 >
                   Sign Out
                 </button>

@@ -94,9 +94,10 @@ export const TournamentBracket: React.FC<TournamentBracketProps> = ({
     return (
       <div className="flex flex-col lg:flex-row gap-12 items-center justify-center py-8">
         {/* Play-In Section */}
-        <div className="space-y-4 bg-white/5 p-6 rounded-3xl border border-white/10 w-full max-w-md lg:w-auto">
-          <h3 className="text-[10px] font-black uppercase tracking-widest text-gray-500 mb-4 text-center lg:text-left">Play-In Tournament</h3>
-          <div className="flex flex-col items-center lg:items-start gap-4">
+          <div className="space-y-4 bg-white/70 backdrop-blur-xl p-8 rounded-[2.5rem] border border-black/10 w-full max-w-md lg:w-auto shadow-2xl relative overflow-hidden">
+          <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-orange-500/20 to-transparent" />
+          <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-gray-500 mb-6 text-center lg:text-left">Play-In Tournament</h3>
+          <div className="flex flex-col items-center lg:items-start gap-6">
             <MatchupCard 
               matchupId={`PI_${c}_A`}
               team1={piA_t1 || null}
@@ -129,7 +130,7 @@ export const TournamentBracket: React.FC<TournamentBracketProps> = ({
 
         {/* Round 1 */}
         <div className="space-y-6 flex flex-col items-center lg:items-start">
-          <h3 className="text-[10px] font-black uppercase tracking-widest text-gray-500 mb-2 px-2">Round 1</h3>
+          <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-gray-500 mb-4 px-2">Round 1</h3>
           {r1Matchups.map((m, i) => {
             const matchupId = `R1_${c}_${i + 1}`;
             return (
@@ -149,7 +150,7 @@ export const TournamentBracket: React.FC<TournamentBracketProps> = ({
 
         {/* Round 2 */}
         <div className="space-y-12 flex flex-col items-center lg:items-start">
-          <h3 className="text-[10px] font-black uppercase tracking-widest text-gray-500 mb-2 px-2">Semifinals</h3>
+          <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-gray-500 mb-4 px-2">Semifinals</h3>
           {r2Matchups.map((m, i) => {
             const matchupId = `R2_${c}_${i + 1}`;
             return (
@@ -169,7 +170,7 @@ export const TournamentBracket: React.FC<TournamentBracketProps> = ({
 
         {/* Conf Finals */}
         <div className="space-y-4 flex flex-col items-center lg:items-start">
-          <h3 className="text-[10px] font-black uppercase tracking-widest text-gray-500 mb-2 px-2 text-center lg:text-left">Conference Finals</h3>
+          <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-gray-500 mb-4 px-2 text-center lg:text-left">Conf. Finals</h3>
           <MatchupCard 
             matchupId={`CF_${c}`}
             team1={cf.t1 || null}
@@ -215,10 +216,10 @@ export const TournamentBracket: React.FC<TournamentBracketProps> = ({
   return (
     <div className="space-y-8">
       {/* Conference Tabs */}
-      <div className="flex items-center justify-center gap-1 sm:gap-2 bg-white/5 p-1 sm:p-1.5 rounded-xl sm:rounded-2xl border border-white/10 w-full sm:w-fit max-w-[calc(100vw-2rem)] mx-auto overflow-x-auto no-scrollbar">
+      <div className="flex items-center justify-center gap-1 sm:gap-2 bg-black/5 p-1 sm:p-1.5 rounded-xl sm:rounded-2xl border border-black/10 w-full sm:w-fit max-w-[calc(100vw-2rem)] mx-auto overflow-x-auto no-scrollbar">
         <button 
           onClick={() => setActiveConf('East')}
-          className={`flex-1 sm:flex-none px-3 sm:px-8 py-2 sm:py-2.5 rounded-lg sm:rounded-xl text-[10px] sm:text-xs font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 whitespace-nowrap ${activeConf === 'East' ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' : 'text-gray-500 hover:text-white'}`}
+          className={`flex-1 sm:flex-none px-3 sm:px-8 py-2 sm:py-2.5 rounded-lg sm:rounded-xl text-[10px] sm:text-xs font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 whitespace-nowrap ${activeConf === 'East' ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' : 'text-gray-500 hover:text-gray-900'}`}
         >
           <span className="hidden sm:inline">Eastern Conference</span>
           <span className="sm:hidden">East</span>
@@ -228,7 +229,7 @@ export const TournamentBracket: React.FC<TournamentBracketProps> = ({
         </button>
         <button 
           onClick={() => setActiveConf('West')}
-          className={`flex-1 sm:flex-none px-3 sm:px-8 py-2 sm:py-2.5 rounded-lg sm:rounded-xl text-[10px] sm:text-xs font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 whitespace-nowrap ${activeConf === 'West' ? 'bg-red-600 text-white shadow-lg shadow-red-600/20' : 'text-gray-500 hover:text-white'}`}
+          className={`flex-1 sm:flex-none px-3 sm:px-8 py-2 sm:py-2.5 rounded-lg sm:rounded-xl text-[10px] sm:text-xs font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 whitespace-nowrap ${activeConf === 'West' ? 'bg-red-600 text-white shadow-lg shadow-red-600/20' : 'text-gray-500 hover:text-gray-900'}`}
         >
           <span className="hidden sm:inline">Western Conference</span>
           <span className="sm:hidden">West</span>
@@ -238,7 +239,7 @@ export const TournamentBracket: React.FC<TournamentBracketProps> = ({
         </button>
         <button 
           onClick={() => setActiveConf('Finals')}
-          className={`flex-1 sm:flex-none px-3 sm:px-8 py-2 sm:py-2.5 rounded-lg sm:rounded-xl text-[10px] sm:text-xs font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 whitespace-nowrap ${activeConf === 'Finals' ? 'bg-orange-500 text-white shadow-lg shadow-orange-500/20' : 'text-gray-500 hover:text-white'}`}
+          className={`flex-1 sm:flex-none px-3 sm:px-8 py-2 sm:py-2.5 rounded-lg sm:rounded-xl text-[10px] sm:text-xs font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 whitespace-nowrap ${activeConf === 'Finals' ? 'bg-orange-500 text-white shadow-lg shadow-orange-500/20' : 'text-gray-500 hover:text-gray-900'}`}
         >
           <span className="hidden sm:inline">The Finals</span>
           <span className="sm:hidden">Finals</span>
@@ -273,7 +274,7 @@ export const TournamentBracket: React.FC<TournamentBracketProps> = ({
             </div>
 
             {/* Tiebreaker Input */}
-            <div className="w-64 bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-6 space-y-4 shadow-2xl">
+            <div className="w-64 bg-white/70 backdrop-blur-xl border border-black/10 rounded-2xl p-6 space-y-4 shadow-2xl">
               <div>
                 <label className="text-[10px] font-black uppercase tracking-widest text-gray-500 block mb-2">
                   Finals Tiebreaker
@@ -285,7 +286,7 @@ export const TournamentBracket: React.FC<TournamentBracketProps> = ({
                     value={tiebreakerPrediction || ''}
                     onChange={(e) => onTiebreakerChange(parseInt(e.target.value) || 0)}
                     placeholder="Total Points"
-                    className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-lg font-black focus:border-orange-500/50 outline-none transition-all placeholder:text-gray-700"
+                    className="w-full bg-black/5 border border-black/10 rounded-xl px-4 py-3 text-lg font-black focus:border-orange-500/50 outline-none transition-all placeholder:text-gray-400 text-gray-900"
                   />
                   <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs font-black text-gray-600 uppercase">PTS</span>
                 </div>

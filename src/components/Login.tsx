@@ -45,19 +45,19 @@ export const Login: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-950 flex items-center justify-center p-4">
+    <div className="min-h-screen flex items-center justify-center p-4">
       <div className="w-full max-w-md space-y-8 animate-in fade-in zoom-in duration-500">
         <div className="text-center space-y-4">
           <div className="inline-block bg-orange-500 p-4 rounded-2xl shadow-[0_0_30px_rgba(245,132,38,0.3)]">
             <Trophy className="w-10 h-10 text-white" />
           </div>
-          <h1 className="text-4xl font-black uppercase italic tracking-tighter">
+          <h1 className="text-4xl font-black uppercase italic tracking-tighter text-gray-900">
             NBA <span className="text-orange-500">Playoffs</span> Bracket
           </h1>
-          <p className="text-gray-400 font-medium">Sign in to start your bracket challenge</p>
+          <p className="text-gray-500 font-medium">Sign in to start your bracket challenge</p>
         </div>
 
-        <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-3xl p-8 shadow-2xl">
+        <div className="bg-white/70 backdrop-blur-xl border border-black/10 rounded-3xl p-8 shadow-2xl">
           <form onSubmit={handleEmailLogin} className="space-y-6">
             {error && (
               <div className="p-3 bg-red-500/10 border border-red-500/50 rounded-xl text-red-400 text-sm text-center">
@@ -109,7 +109,7 @@ export const Login: React.FC = () => {
 
           <div className="relative my-8">
             <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-white/10"></div></div>
-            <div className="relative flex justify-center text-xs uppercase tracking-widest"><span className="bg-gray-950 px-4 text-gray-500 font-bold">Or continue with</span></div>
+            <div className="relative flex justify-center text-xs uppercase tracking-widest"><span className="bg-black px-4 text-gray-500 font-bold">Or continue with</span></div>
           </div>
 
           <button 

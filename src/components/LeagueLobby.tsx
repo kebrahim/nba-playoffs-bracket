@@ -24,7 +24,7 @@ export const LeagueLobby: React.FC<LeagueLobbyProps> = ({
       {/* Header Actions */}
       <div className="flex flex-col md:flex-row gap-4 justify-between items-start md:items-center">
         <div>
-          <h2 className="text-3xl font-black uppercase italic leading-none mb-2">My Leagues</h2>
+          <h2 className="text-3xl font-black uppercase italic leading-none mb-2 text-gray-900">My Leagues</h2>
           <p className="text-gray-500 text-sm font-medium">Manage your active bracket challenges</p>
         </div>
         
@@ -35,7 +35,7 @@ export const LeagueLobby: React.FC<LeagueLobbyProps> = ({
               placeholder="Enter Invite Code"
               value={inviteCode}
               onChange={(e) => setInviteCode(e.target.value)}
-              className="w-full md:w-48 bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-orange-500/50 transition-all"
+              className="w-full md:w-48 bg-black/5 border border-black/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-orange-500/50 transition-all text-gray-900"
             />
             <button 
               onClick={() => onJoinLeague(inviteCode)}
@@ -59,7 +59,7 @@ export const LeagueLobby: React.FC<LeagueLobbyProps> = ({
       {/* League Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {leagues.length === 0 ? (
-          <div className="col-span-full py-20 text-center bg-white/5 border border-dashed border-white/10 rounded-3xl">
+          <div className="col-span-full py-20 text-center bg-black/5 border border-dashed border-black/10 rounded-3xl">
             <Search className="w-12 h-12 text-gray-600 mx-auto mb-4" />
             <p className="text-gray-400 font-medium">No leagues found. Join one to get started!</p>
           </div>
@@ -68,39 +68,41 @@ export const LeagueLobby: React.FC<LeagueLobbyProps> = ({
             <div 
               key={league.id}
               onClick={() => onSelectLeague(league.id)}
-              className="group relative overflow-hidden bg-gradient-to-br from-gray-900 to-black border border-white/5 rounded-3xl p-6 cursor-pointer hover:border-orange-500/50 transition-all"
+              className="group relative overflow-hidden bg-white/70 backdrop-blur-xl border border-black/5 rounded-3xl p-6 cursor-pointer hover:border-orange-500/50 transition-all duration-500 shadow-xl"
             >
-              <div className="absolute top-0 right-0 -mt-4 -mr-4 w-24 h-24 bg-orange-500/5 blur-2xl rounded-full group-hover:bg-orange-500/10 transition-all" />
+              <div className="absolute top-0 right-0 -mt-4 -mr-4 w-32 h-32 bg-orange-500/5 blur-3xl rounded-full group-hover:bg-orange-500/10 transition-all duration-700" />
               
-              <div className="flex justify-between items-start mb-6">
-                <div className="bg-white/5 p-3 rounded-2xl group-hover:bg-orange-500/20 transition-all">
+              <div className="flex justify-between items-start mb-6 relative z-10">
+                <div className="bg-black/5 p-3 rounded-2xl group-hover:bg-orange-500/20 transition-all duration-500">
                   <Users className="w-6 h-6 text-orange-500" />
                 </div>
-                <div className="flex items-center gap-1.5 bg-black/40 px-2 py-1 rounded-lg border border-white/5">
-                  <Lock className="w-3 h-3 text-gray-500" />
-                  <span className="text-[10px] font-bold text-gray-500 uppercase tracking-tighter">Locked</span>
+                <div className="flex items-center gap-1.5 bg-white/60 px-2.5 py-1 rounded-full border border-black/5">
+                  <div className="w-1.5 h-1.5 rounded-full bg-orange-500 animate-pulse" />
+                  <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Active</span>
                 </div>
               </div>
 
-              <h3 className="text-xl font-black uppercase italic mb-1 group-hover:text-orange-500 transition-colors">
-                {league.leagueName}
-              </h3>
-              <p className="text-xs text-gray-500 font-bold uppercase tracking-widest mb-6">
-                Commissioner: {league.commissionerId.slice(0, 8)}...
-              </p>
+              <div className="relative z-10">
+                <h3 className="text-2xl font-black uppercase italic mb-1 group-hover:text-orange-500 transition-colors tracking-tighter text-gray-900">
+                  {league.leagueName}
+                </h3>
+                <p className="text-[10px] text-gray-500 font-bold uppercase tracking-[0.2em] mb-8">
+                  Commish: {league.commissionerId.slice(0, 8)}
+                </p>
 
-              <div className="flex items-center justify-between pt-4 border-t border-white/5">
-                <div className="flex -space-x-2">
-                  {[1, 2, 3].map(i => (
-                    <div key={i} className="w-6 h-6 rounded-full bg-gray-800 border-2 border-black" />
-                  ))}
-                  <div className="w-6 h-6 rounded-full bg-orange-500/20 border-2 border-black flex items-center justify-center">
-                    <span className="text-[8px] font-bold text-orange-500">+12</span>
+                <div className="flex items-center justify-between pt-5 border-t border-black/5">
+                  <div className="flex -space-x-2.5">
+                    {[1, 2, 3].map(i => (
+                      <div key={i} className="w-8 h-8 rounded-full bg-gray-200 border-2 border-white shadow-lg" />
+                    ))}
+                    <div className="w-8 h-8 rounded-full bg-orange-500/20 border-2 border-white flex items-center justify-center backdrop-blur-sm">
+                      <span className="text-[10px] font-black text-orange-500">+{league.participants?.length || 0}</span>
+                    </div>
                   </div>
-                </div>
-                <div className="flex items-center gap-1 text-orange-500 font-bold text-sm">
-                  View Bracket
-                  <ChevronRight className="w-4 h-4" />
+                  <div className="flex items-center gap-1 text-orange-500 font-black uppercase tracking-widest text-[10px] group-hover:translate-x-1 transition-transform">
+                    Enter
+                    <ChevronRight className="w-3 h-3" />
+                  </div>
                 </div>
               </div>
             </div>

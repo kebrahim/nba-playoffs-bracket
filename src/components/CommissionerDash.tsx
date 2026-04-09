@@ -148,13 +148,13 @@ export const CommissionerDash: React.FC = () => {
             <Settings className="w-8 h-8 text-orange-500" />
           </div>
           <div>
-            <h1 className="text-4xl font-black uppercase italic tracking-tighter">League <span className="text-orange-500">Settings</span></h1>
+            <h1 className="text-4xl font-black uppercase italic tracking-tighter text-gray-900">League <span className="text-orange-500">Settings</span></h1>
             <p className="text-gray-500 font-medium uppercase tracking-widest text-xs">Commissioner Dashboard</p>
           </div>
         </div>
         <button 
           onClick={() => navigate(`/league/${leagueId}`)}
-          className="text-sm font-bold text-gray-500 hover:text-white transition-colors uppercase tracking-widest flex items-center gap-2"
+          className="text-sm font-bold text-gray-500 hover:text-gray-900 transition-colors uppercase tracking-widest flex items-center gap-2"
         >
           <ArrowLeft className="w-4 h-4" /> Back to Bracket
         </button>
@@ -170,10 +170,10 @@ export const CommissionerDash: React.FC = () => {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
         {/* Invite Section */}
         <div className="md:col-span-1 space-y-6">
-          <div className="bg-white/5 border border-white/10 rounded-3xl p-8 text-center space-y-4">
+          <div className="bg-white/70 backdrop-blur-xl border border-black/10 rounded-3xl p-8 text-center space-y-4">
             <Share2 className="w-10 h-10 text-orange-500 mx-auto mb-2" />
             <h3 className="text-sm font-bold text-gray-500 uppercase tracking-widest">Invite Friends</h3>
-            <div className="bg-black/40 border border-white/10 rounded-xl p-4 font-mono text-2xl font-black tracking-widest text-orange-500">
+            <div className="bg-black/5 border border-black/10 rounded-xl p-4 font-mono text-2xl font-black tracking-widest text-orange-500">
               {league.inviteCode}
             </div>
             <p className="text-xs text-gray-500 leading-relaxed">
@@ -195,7 +195,7 @@ export const CommissionerDash: React.FC = () => {
                   navigator.clipboard.writeText(league.inviteCode);
                   setMessage({ type: 'success', text: 'Invite code copied to clipboard!' });
                 }}
-                className="w-full bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-bold py-2 rounded-lg transition-all"
+                className="w-full bg-black/5 hover:bg-black/10 border border-black/10 text-xs font-bold py-2 rounded-lg transition-all text-gray-900"
               >
                 Copy Code Only
               </button>
@@ -205,12 +205,12 @@ export const CommissionerDash: React.FC = () => {
 
         {/* Settings Form */}
         <div className="md:col-span-2">
-          <form onSubmit={handleUpdateConfig} className="bg-white/5 border border-white/10 rounded-3xl p-8 space-y-10">
+          <form onSubmit={handleUpdateConfig} className="bg-white/70 backdrop-blur-xl border border-black/10 rounded-3xl p-8 space-y-10">
             {/* General Settings */}
             <div className="space-y-6">
               <div className="flex items-center gap-3">
                 <Settings className="w-6 h-6 text-orange-500" />
-                <h2 className="text-xl font-bold uppercase italic">General Settings</h2>
+                <h2 className="text-xl font-bold uppercase italic text-gray-900">General Settings</h2>
               </div>
               
               <div className="space-y-2">
@@ -221,7 +221,7 @@ export const CommissionerDash: React.FC = () => {
                   type="text" 
                   value={league.leagueName}
                   onChange={(e) => updateLeagueName(e.target.value)}
-                  className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm font-bold focus:border-orange-500/50 outline-none"
+                  className="w-full bg-black/5 border border-black/10 rounded-xl px-4 py-3 text-sm font-bold focus:border-orange-500/50 outline-none text-gray-900"
                   placeholder="Enter league name"
                 />
               </div>
@@ -234,7 +234,7 @@ export const CommissionerDash: React.FC = () => {
                   type="text" 
                   value={league.inviteCode}
                   onChange={(e) => updateInviteCode(e.target.value)}
-                  className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm font-mono font-bold focus:border-orange-500/50 outline-none uppercase"
+                  className="w-full bg-black/5 border border-black/10 rounded-xl px-4 py-3 text-sm font-mono font-bold focus:border-orange-500/50 outline-none uppercase text-gray-900"
                   placeholder="E.G. MYLEAGUE2024"
                   maxLength={12}
                 />
@@ -246,7 +246,7 @@ export const CommissionerDash: React.FC = () => {
             <div className="space-y-6">
               <div className="flex items-center gap-3">
                 <Trophy className="w-6 h-6 text-orange-500" />
-                <h2 className="text-xl font-bold uppercase italic">Scoring Configuration</h2>
+                <h2 className="text-xl font-bold uppercase italic text-gray-900">Scoring Configuration</h2>
               </div>
 
               <div className="grid grid-cols-2 gap-6">
@@ -266,7 +266,7 @@ export const CommissionerDash: React.FC = () => {
                       type="number" 
                       value={league.pointConfig[field.key as keyof PointConfig]}
                       onChange={(e) => updatePoint(field.key as keyof PointConfig, parseInt(e.target.value))}
-                      className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm font-bold focus:border-orange-500/50 outline-none"
+                      className="w-full bg-black/5 border border-black/10 rounded-xl px-4 py-3 text-sm font-bold focus:border-orange-500/50 outline-none text-gray-900"
                     />
                   </div>
                 ))}

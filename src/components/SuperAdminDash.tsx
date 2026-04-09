@@ -199,12 +199,12 @@ export const SuperAdminDash: React.FC = () => {
 
   return (
     <div className="space-y-12 max-w-5xl mx-auto pb-20 animate-in fade-in slide-in-from-bottom-4 duration-700">
-      <div className="flex items-center gap-4 border-b border-white/10 pb-6">
+      <div className="flex items-center gap-4 border-b border-black/10 pb-6">
         <div className="bg-red-500/20 p-3 rounded-2xl border border-red-500/50">
           <Shield className="w-8 h-8 text-red-500" />
         </div>
         <div>
-          <h1 className="text-4xl font-black uppercase italic tracking-tighter">Super Admin <span className="text-red-500">Command</span></h1>
+          <h1 className="text-4xl font-black uppercase italic tracking-tighter text-gray-900">Super Admin <span className="text-red-500">Command</span></h1>
           <p className="text-gray-500 font-medium uppercase tracking-widest text-xs">Global Tournament Configuration</p>
         </div>
         <div className="ml-auto">
@@ -237,10 +237,10 @@ export const SuperAdminDash: React.FC = () => {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         {/* Global Settings */}
-        <section className="bg-white/5 border border-white/10 rounded-3xl p-8 space-y-6">
+        <section className="bg-white/70 backdrop-blur-xl border border-black/10 rounded-3xl p-8 space-y-6">
           <div className="flex items-center gap-3 mb-4">
             <Calendar className="w-6 h-6 text-orange-500" />
-            <h2 className="text-xl font-bold uppercase italic">Global Deadlines</h2>
+            <h2 className="text-xl font-bold uppercase italic text-gray-900">Global Deadlines</h2>
           </div>
           <form onSubmit={handleUpdateSettings} className="space-y-4">
             <div className="space-y-2">
@@ -249,7 +249,7 @@ export const SuperAdminDash: React.FC = () => {
                 type="datetime-local" 
                 value={openTimeStr}
                 onChange={(e) => setOpenTimeStr(e.target.value)}
-                className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm focus:border-orange-500/50 outline-none"
+                className="w-full bg-black/5 border border-black/10 rounded-xl px-4 py-3 text-sm focus:border-orange-500/50 outline-none text-gray-900"
               />
             </div>
             <div className="space-y-2">
@@ -258,7 +258,7 @@ export const SuperAdminDash: React.FC = () => {
                 type="datetime-local" 
                 value={lockTimeStr}
                 onChange={(e) => setLockTimeStr(e.target.value)}
-                className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm focus:border-orange-500/50 outline-none"
+                className="w-full bg-black/5 border border-black/10 rounded-xl px-4 py-3 text-sm focus:border-orange-500/50 outline-none text-gray-900"
               />
             </div>
             <button type="submit" className="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold py-3 rounded-xl transition-all flex items-center justify-center gap-2">
@@ -268,25 +268,25 @@ export const SuperAdminDash: React.FC = () => {
         </section>
 
         {/* Manual Override */}
-        <section className="bg-white/5 border border-white/10 rounded-3xl p-8 space-y-6">
+        <section className="bg-white/70 backdrop-blur-xl border border-black/10 rounded-3xl p-8 space-y-6">
           <div className="flex items-center gap-3 mb-4">
             <Trophy className="w-6 h-6 text-orange-500" />
-            <h2 className="text-xl font-bold uppercase italic">Manual Overrides</h2>
+            <h2 className="text-xl font-bold uppercase italic text-gray-900">Manual Overrides</h2>
           </div>
           <div className="space-y-4 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
             {series.map(s => (
-              <div key={s.id} className="p-4 bg-black/40 border border-white/5 rounded-xl flex items-center justify-between gap-4">
+              <div key={s.id} className="p-4 bg-black/5 border border-black/5 rounded-xl flex items-center justify-between gap-4">
                 <div className="text-xs font-bold text-gray-400 uppercase">{s.id}</div>
                 <div className="flex gap-2">
                   <button 
                     onClick={() => handleManualOverride(s.id, s.team1Id)}
-                    className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${s.advancingTeamId === s.team1Id ? 'bg-orange-500 text-white' : 'bg-white/5 hover:bg-white/10'}`}
+                    className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${s.advancingTeamId === s.team1Id ? 'bg-orange-500 text-white' : 'bg-black/5 hover:bg-black/10'}`}
                   >
                     {s.team1Id}
                   </button>
                   <button 
                     onClick={() => handleManualOverride(s.id, s.team2Id)}
-                    className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${s.advancingTeamId === s.team2Id ? 'bg-orange-500 text-white' : 'bg-white/5 hover:bg-white/10'}`}
+                    className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${s.advancingTeamId === s.team2Id ? 'bg-orange-500 text-white' : 'bg-black/5 hover:bg-black/10'}`}
                   >
                     {s.team2Id}
                   </button>
@@ -298,11 +298,11 @@ export const SuperAdminDash: React.FC = () => {
       </div>
 
       {/* Team Seeding */}
-      <section className="bg-white/5 border border-white/10 rounded-3xl p-8">
+      <section className="bg-white/70 backdrop-blur-xl border border-black/10 rounded-3xl p-8">
         <div className="flex items-center justify-between mb-8">
           <div className="flex items-center gap-3">
             <Users className="w-6 h-6 text-orange-500" />
-            <h2 className="text-xl font-bold uppercase italic">Team Seeding (1-10)</h2>
+            <h2 className="text-xl font-bold uppercase italic text-gray-900">Team Seeding (1-10)</h2>
           </div>
           <div className="flex items-center gap-3">
             <button 
@@ -321,7 +321,7 @@ export const SuperAdminDash: React.FC = () => {
                 </>
               )}
             </button>
-            <button className="bg-white/5 hover:bg-white/10 border border-white/10 px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2">
+            <button className="bg-black/5 hover:bg-black/10 border border-black/10 px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2">
               <Plus className="w-4 h-4" /> Add Team
             </button>
           </div>
@@ -333,7 +333,7 @@ export const SuperAdminDash: React.FC = () => {
               <h3 className={`text-sm font-black uppercase tracking-[0.2em] pb-2 border-b border-white/5 ${conf === 'East' ? 'text-blue-500' : 'text-red-500'}`}>{conf} Conference</h3>
               <div className="space-y-3">
                 {teams.filter(t => t.conference === conf).map(team => (
-                  <div key={team.id} className="flex items-center gap-3 bg-black/40 p-3 rounded-xl border border-white/5 group">
+                  <div key={team.id} className="flex items-center gap-3 bg-black/5 p-3 rounded-xl border border-black/5 group">
                     <span className="text-xs font-black text-gray-600 w-4">{team.seed}</span>
                     <input 
                       type="text" 
@@ -374,9 +374,9 @@ export const SuperAdminDash: React.FC = () => {
           <h2 className="text-xl font-bold uppercase italic text-red-500">Danger Zone</h2>
         </div>
         
-        <div className="bg-black/40 border border-red-500/10 rounded-2xl p-6 flex flex-col md:flex-row items-center justify-between gap-6">
+        <div className="bg-black/5 border border-red-500/10 rounded-2xl p-6 flex flex-col md:flex-row items-center justify-between gap-6">
           <div className="space-y-1">
-            <h3 className="text-lg font-bold">Reset All Contestant Picks</h3>
+            <h3 className="text-lg font-bold text-gray-900">Reset All Contestant Picks</h3>
             <p className="text-sm text-gray-500 max-w-md">
               Permanently deletes every bracket and pick in the system. Use this to clear test data before the official tournament begins.
             </p>
@@ -386,7 +386,7 @@ export const SuperAdminDash: React.FC = () => {
             <div className="flex items-center gap-3 animate-in fade-in zoom-in duration-300">
               <button 
                 onClick={() => setShowClearConfirm(false)}
-                className="px-6 py-3 rounded-xl text-xs font-bold text-gray-400 hover:text-white transition-all"
+                className="px-6 py-3 rounded-xl text-xs font-bold text-gray-500 hover:text-gray-900 transition-all"
               >
                 Cancel
               </button>

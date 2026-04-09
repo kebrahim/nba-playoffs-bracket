@@ -99,7 +99,7 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({ leagueId }) => {
       </div>
 
       {entries.length === 0 ? (
-        <div className="py-12 text-center bg-white/5 border border-dashed border-white/10 rounded-3xl">
+        <div className="py-12 text-center bg-black/5 border border-dashed border-black/10 rounded-3xl">
           <p className="text-gray-500 font-medium">
             No brackets submitted yet.
           </p>
@@ -109,8 +109,8 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({ leagueId }) => {
           <div 
             key={entry.id}
             onClick={() => isLocked && navigate(`/league/${leagueId}/user/${entry.userId}`)}
-            className={`group relative flex items-center justify-between px-6 py-4 bg-white/5 border border-white/10 rounded-2xl transition-all ${
-              isLocked ? 'cursor-pointer hover:border-orange-500/50 hover:bg-white/10' : ''
+            className={`group relative flex items-center justify-between px-6 py-5 bg-white/60 backdrop-blur-xl border border-black/5 rounded-2xl transition-all duration-500 ${
+              isLocked ? 'cursor-pointer hover:border-orange-500/50 hover:bg-black/5' : ''
             } ${
               index === 0 ? 'bg-gradient-to-r from-orange-500/10 to-transparent border-orange-500/20' : ''
             }`}

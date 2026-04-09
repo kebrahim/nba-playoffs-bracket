@@ -258,16 +258,16 @@ export const LeagueBracketView: React.FC = () => {
   return (
     <div className="space-y-8">
       {pendingBracket && (
-        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[100] flex items-center gap-4 bg-black/80 backdrop-blur-xl border border-white/10 p-4 rounded-2xl shadow-2xl animate-in fade-in slide-in-from-bottom-4">
+        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[100] flex items-center gap-4 bg-white/90 backdrop-blur-2xl border border-black/10 p-4 rounded-2xl shadow-2xl animate-in fade-in slide-in-from-bottom-4">
           <div className="flex flex-col">
             <span className="text-xs font-black uppercase tracking-widest text-orange-500">Unsaved Changes</span>
-            <span className="text-[10px] text-gray-400">You have pending picks in your bracket</span>
+            <span className="text-[10px] text-gray-600">You have pending picks in your bracket</span>
           </div>
           <div className="flex items-center gap-2 ml-4">
             <button 
               onClick={handleCancel}
               disabled={isSaving}
-              className="px-4 py-2 text-xs font-bold text-gray-400 hover:text-white transition-colors"
+              className="px-4 py-2 text-xs font-bold text-gray-500 hover:text-gray-900 transition-colors"
             >
               Discard
             </button>
@@ -286,12 +286,12 @@ export const LeagueBracketView: React.FC = () => {
         <div className="flex items-center gap-4">
           <button 
             onClick={() => navigate('/')}
-            className="p-2 bg-white/5 hover:bg-white/10 rounded-xl transition-all text-gray-500 hover:text-white"
+            className="p-2 bg-black/5 hover:bg-black/10 rounded-xl transition-all text-gray-500 hover:text-gray-900"
           >
             <ArrowLeft className="w-5 h-5" />
           </button>
           <div>
-            <h2 className="text-3xl font-black uppercase italic text-white tracking-tight leading-none">
+            <h2 className="text-3xl font-black uppercase italic text-gray-900 tracking-tight leading-none">
               {league?.leagueName}
             </h2>
             <div className="flex items-center gap-2 mt-1">
@@ -308,16 +308,16 @@ export const LeagueBracketView: React.FC = () => {
           </div>
         </div>
 
-        <div className="flex items-center gap-3 bg-white/5 p-1.5 rounded-2xl border border-white/10">
+        <div className="flex items-center gap-3 bg-white/60 backdrop-blur-xl p-1.5 rounded-2xl border border-black/5">
           <button 
             onClick={() => setActiveTab('bracket')}
-            className={`px-6 py-2 rounded-xl text-xs font-bold uppercase tracking-widest transition-all ${activeTab === 'bracket' ? 'bg-orange-500 text-white shadow-lg shadow-orange-500/20' : 'text-gray-500 hover:text-white'}`}
+            className={`px-6 py-2 rounded-xl text-xs font-bold uppercase tracking-widest transition-all ${activeTab === 'bracket' ? 'bg-orange-500 text-white shadow-lg shadow-orange-500/20' : 'text-gray-500 hover:text-gray-900'}`}
           >
             My Bracket
           </button>
           <button 
             onClick={() => setActiveTab('leaderboard')}
-            className={`px-6 py-2 rounded-xl text-xs font-bold uppercase tracking-widest transition-all ${activeTab === 'leaderboard' ? 'bg-orange-500 text-white shadow-lg shadow-orange-500/20' : 'text-gray-500 hover:text-white'}`}
+            className={`px-6 py-2 rounded-xl text-xs font-bold uppercase tracking-widest transition-all ${activeTab === 'leaderboard' ? 'bg-orange-500 text-white shadow-lg shadow-orange-500/20' : 'text-gray-500 hover:text-gray-900'}`}
           >
             Leaderboard
           </button>
