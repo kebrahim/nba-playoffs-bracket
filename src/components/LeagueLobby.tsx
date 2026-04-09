@@ -87,7 +87,7 @@ export const LeagueLobby: React.FC<LeagueLobbyProps> = ({
                   {league.leagueName}
                 </h3>
                 <p className="text-[10px] text-gray-500 font-bold uppercase tracking-[0.2em] mb-8">
-                  Commish: {league.commissionerId.slice(0, 8)}
+                  Commish: {league.commissionerName || league.commissionerId.slice(0, 8)}
                 </p>
 
                 <div className="flex items-center justify-between pt-5 border-t border-black/5">

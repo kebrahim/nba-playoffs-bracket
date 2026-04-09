@@ -12,7 +12,7 @@ import { ForgotPassword } from './components/ForgotPassword';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { useState, useEffect } from 'react';
 import { db, auth } from './firebase';
-import { doc, getDocFromServer, collection, query, where, onSnapshot, addDoc, updateDoc, arrayUnion, getDocs } from 'firebase/firestore';
+import { doc, getDoc, getDocFromServer, collection, query, where, onSnapshot, addDoc, updateDoc, arrayUnion, getDocs } from 'firebase/firestore';
 import { League } from './types/database';
 
 enum OperationType {
@@ -87,8 +87,25 @@ const useLeagues = (userId: string | undefined, joinedLeagueIds: string[] = []) 
       where('__name__', 'in', ids.slice(0, 10))
     );
 
-    const unsubscribe = onSnapshot(leaguesQuery, (snapshot) => {
-      setLeagues(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as League)));
+    const unsubscribe = onSnapshot(leaguesQuery, async (snapshot) => {
+      const leaguesData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as League));
+      
+      // Fetch missing commissioner names
+      const updatedLeagues = await Promise.all(leaguesData.map(async (league) => {
+        if (!league.commissionerName) {
+          try {
+            const userDoc = await getDoc(doc(db, 'users', league.commissionerId));
+            if (userDoc.exists()) {
+              return { ...league, commissionerName: userDoc.data().displayName };
+            }
+          } catch (error) {
+            console.error("Error fetching commissioner name:", error);
+          }
+        }
+        return league;
+      }));
+
+      setLeagues(updatedLeagues);
       setLoading(false);
     });
 
@@ -189,10 +206,28 @@ const LobbyView = () => {
   const navigate = useNavigate();
   const { leagues } = useLeagues(user?.uid, userData?.joinedLeagueIds);
 
+  // Auto-repair missing commissioner names for existing leagues
+  useEffect(() => {
+    if (!user || !userData || leagues.length === 0) return;
+    
+    leagues.forEach(async (league) => {
+      if (league.commissionerId === user.uid && !league.commissionerName) {
+        try {
+          await updateDoc(doc(db, 'leagues', league.id), {
+            commissionerName: userData.displayName
+          });
+        } catch (error) {
+          console.error("Error repairing league name:", error);
+        }
+      }
+    });
+  }, [leagues, user, userData]);
+
   const handleJoinLeague = async (code: string) => {
     if (!user || !code) return;
+    const cleanCode = code.trim().toUpperCase();
     try {
-      const q = query(collection(db, 'leagues'), where('inviteCode', '==', code.toUpperCase()));
+      const q = query(collection(db, 'leagues'), where('inviteCode', '==', cleanCode));
       const querySnapshot = await getDocs(q);
       
       if (querySnapshot.empty) {
@@ -201,8 +236,9 @@ const LobbyView = () => {
       }
 
       const leagueId = querySnapshot.docs[0].id;
+      const joinedIds = userData?.joinedLeagueIds || [];
 
-      if (userData?.joinedLeagueIds.includes(leagueId)) {
+      if (joinedIds.includes(leagueId)) {
         // Already in, just navigate
         navigate(`/league/${leagueId}`);
         return;
@@ -219,6 +255,7 @@ const LobbyView = () => {
       navigate(`/league/${leagueId}`);
     } catch (error) {
       console.error("Error joining league:", error);
+      alert("Failed to join league. Please try again later.");
       try {
         handleFirestoreError(error, OperationType.UPDATE, 'leagues');
       } catch (e) {
@@ -242,6 +279,7 @@ const LobbyView = () => {
       const leagueRef = await addDoc(collection(db, 'leagues'), {
         leagueName: `${userData?.displayName || 'My'}'s League`,
         commissionerId: user.uid,
+        commissionerName: userData?.displayName || 'Unknown',
         inviteCode,
         participants: [user.uid],
         pointConfig: {

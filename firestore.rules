@@ -62,7 +62,20 @@ service cloud.firestore {
       allow read: if true;
       allow create: if isAuthenticated() && 
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.systemRole == 'SuperAdmin';
-      allow update, delete: if isAuthenticated() && 
+      
+      allow update: if isAuthenticated() && (
+        // Commissioner or SuperAdmin can do anything
+        resource.data.commissionerId == request.auth.uid || 
+        isSuperAdmin() ||
+        // Users can join by adding themselves to participants
+        (
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['participants']) &&
+          request.resource.data.participants.hasAll(resource.data.participants) &&
+          request.auth.uid in request.resource.data.participants
+        )
+      );
+      
+      allow delete: if isAuthenticated() && 
         (resource.data.commissionerId == request.auth.uid || 
          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.systemRole == 'SuperAdmin');
     }

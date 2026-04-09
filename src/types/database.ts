@@ -63,6 +63,7 @@ export interface League {
   id: string;
   leagueName: string;
   commissionerId: string;
+  commissionerName?: string;
   inviteCode: string;
   lastCalculated: Date;
   pointConfig: PointConfig;
