@@ -118,6 +118,12 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({ leagueId }) => {
     );
   }
 
+  const getRank = (index: number) => {
+    const currentScore = entries[index].totalScore || 0;
+    const firstIndexWithScore = entries.findIndex(e => (e.totalScore || 0) === currentScore);
+    return firstIndexWithScore + 1;
+  };
+
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between px-6 py-2 text-[10px] font-black uppercase tracking-widest text-gray-500">
@@ -138,58 +144,61 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({ leagueId }) => {
           </p>
         </div>
       ) : (
-        entries.map((entry, index) => (
-          <div 
-            key={entry.id}
-            onClick={() => isLocked && navigate(`/league/${leagueId}/user/${entry.userId}`)}
-            className={`group relative flex items-center justify-between px-6 py-5 bg-white/60 backdrop-blur-xl border border-black/5 rounded-2xl transition-all duration-500 ${
-              isLocked ? 'cursor-pointer hover:border-orange-500/50 hover:bg-black/5' : ''
-            } ${
-              index === 0 ? 'bg-gradient-to-r from-orange-500/10 to-transparent border-orange-500/20' : ''
-            }`}
-          >
-            <div className="flex items-center gap-8">
-              <div className="w-8 flex items-center justify-center">
-                {index === 0 ? (
-                  <Trophy className="w-5 h-5 text-orange-500" />
-                ) : index === 1 ? (
-                  <Medal className="w-5 h-5 text-gray-400" />
-                ) : index === 2 ? (
-                  <Medal className="w-5 h-5 text-orange-800" />
-                ) : (
-                  <span className="text-sm font-black text-gray-600 italic">#{index + 1}</span>
-                )}
+        entries.map((entry, index) => {
+          const rank = getRank(index);
+          return (
+            <div 
+              key={entry.id}
+              onClick={() => isLocked && navigate(`/league/${leagueId}/user/${entry.userId}`)}
+              className={`group relative flex items-center justify-between px-6 py-5 bg-white/60 backdrop-blur-xl border border-black/5 rounded-2xl transition-all duration-500 ${
+                isLocked ? 'cursor-pointer hover:border-orange-500/50 hover:bg-black/5' : ''
+              } ${
+                rank === 1 ? 'bg-gradient-to-r from-orange-500/10 to-transparent border-orange-500/20' : ''
+              }`}
+            >
+              <div className="flex items-center gap-8">
+                <div className="w-8 flex items-center justify-center">
+                  {rank === 1 ? (
+                    <Trophy className="w-5 h-5 text-orange-500" />
+                  ) : rank === 2 ? (
+                    <Medal className="w-5 h-5 text-gray-400" />
+                  ) : rank === 3 ? (
+                    <Medal className="w-5 h-5 text-orange-800" />
+                  ) : (
+                    <span className="text-sm font-black text-gray-600 italic">#{rank}</span>
+                  )}
+                </div>
+                <div className="flex flex-col">
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold uppercase italic tracking-tight group-hover:text-orange-500 transition-colors">
+                      {entry.userName}
+                    </span>
+                    {isLocked && <ChevronRight className="w-3 h-3 text-orange-500 opacity-0 group-hover:opacity-100 transition-all" />}
+                  </div>
+                </div>
               </div>
-              <div className="flex flex-col">
-                <div className="flex items-center gap-2">
-                  <span className="font-bold uppercase italic tracking-tight group-hover:text-orange-500 transition-colors">
-                    {entry.userName}
+
+              <div className="flex items-center gap-12">
+                <div className="w-16 text-center">
+                  <span className="text-xs font-mono font-bold text-gray-400">
+                    {isLocked ? (
+                      <>
+                        {entry.tiebreakerPrediction} <span className="text-[8px] text-gray-600 uppercase">PTS</span>
+                      </>
+                    ) : (
+                      <span className="text-[10px] text-gray-600 uppercase italic">Hidden</span>
+                    )}
                   </span>
-                  {isLocked && <ChevronRight className="w-3 h-3 text-orange-500 opacity-0 group-hover:opacity-100 transition-all" />}
+                </div>
+                <div className="w-12 text-right">
+                  <span className="text-xl font-black italic text-orange-500">
+                    {entry.totalScore || 0}
+                  </span>
                 </div>
               </div>
             </div>
-
-            <div className="flex items-center gap-12">
-              <div className="w-16 text-center">
-                <span className="text-xs font-mono font-bold text-gray-400">
-                  {isLocked ? (
-                    <>
-                      {entry.tiebreakerPrediction} <span className="text-[8px] text-gray-600 uppercase">PTS</span>
-                    </>
-                  ) : (
-                    <span className="text-[10px] text-gray-600 uppercase italic">Hidden</span>
-                  )}
-                </span>
-              </div>
-              <div className="w-12 text-right">
-                <span className="text-xl font-black italic text-orange-500">
-                  {entry.totalScore || 0}
-                </span>
-              </div>
-            </div>
-          </div>
-        ))
+          );
+        })
       )}
     </div>
   );
