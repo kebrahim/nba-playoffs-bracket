@@ -1,6 +1,7 @@
 import React from 'react';
 import { MatchupCard } from './MatchupCard';
 import { Team, Pick, SeriesResult } from '../types/database';
+import { ArrowRight, CornerDownRight, CornerUpRight } from 'lucide-react';
 
 interface TournamentBracketProps {
   teams: Team[];
@@ -94,13 +95,19 @@ export const TournamentBracket: React.FC<TournamentBracketProps> = ({
     return (
       <div className="flex flex-col lg:flex-row gap-12 items-center justify-center py-8">
         {/* Play-In Section */}
-        <div className="space-y-4 bg-white/70 backdrop-blur-xl p-8 rounded-[2.5rem] border border-black/10 w-full lg:w-auto shadow-2xl relative overflow-hidden">
+        <div className="bg-white/70 backdrop-blur-xl p-8 rounded-[2.5rem] border border-black/10 w-full lg:w-auto shadow-2xl relative overflow-hidden">
           <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-orange-500/20 to-transparent" />
-          <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-gray-500 mb-6 text-center lg:text-left">Play-In Tournament</h3>
-          <div className="flex flex-col sm:flex-row items-center gap-8">
-            <div className="flex flex-col gap-6">
-              <div className="space-y-1">
-                <span className="text-[8px] font-bold text-gray-400 uppercase tracking-widest ml-2">Game 1 (7 vs 8) — Winner to 7th</span>
+          <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-gray-500 mb-8 text-center lg:text-left">Play-In Tournament</h3>
+          
+          <div className="flex flex-col sm:flex-row items-center gap-12 relative">
+            {/* Game 1 & 2 Column */}
+            <div className="flex flex-col gap-12 relative">
+              {/* Game 1 */}
+              <div className="relative">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-[8px] font-black uppercase tracking-widest text-orange-500 bg-orange-500/10 px-2 py-0.5 rounded">Game 1</span>
+                  <span className="text-[8px] font-bold text-gray-400 uppercase tracking-widest">7 vs 8</span>
+                </div>
                 <MatchupCard 
                   matchupId={`PI_${c}_A`}
                   team1={piA_t1 || null}
@@ -110,9 +117,28 @@ export const TournamentBracket: React.FC<TournamentBracketProps> = ({
                   onPick={(teamId, len) => onPick(`PI_${c}_A`, teamId, len)}
                   isLocked={isLocked}
                 />
+                
+                {/* Winner to 7th Indicator */}
+                <div className="absolute -right-8 top-1/2 -translate-y-1/2 flex items-center gap-1 text-orange-500">
+                  <ArrowRight className="w-4 h-4 animate-pulse" />
+                  <div className="hidden lg:block absolute left-6 whitespace-nowrap">
+                    <span className="text-[7px] font-black uppercase tracking-tighter bg-orange-500 text-white px-1.5 py-0.5 rounded shadow-sm">Winner to 7th Seed</span>
+                  </div>
+                </div>
+
+                {/* Loser to Game 3 Connector */}
+                <div className="absolute left-1/2 -bottom-8 -translate-x-1/2 flex flex-col items-center gap-1">
+                  <div className="w-px h-6 bg-gradient-to-b from-black/20 to-transparent" />
+                  <span className="text-[7px] font-bold text-gray-400 uppercase tracking-tighter">Loser to Game 3</span>
+                </div>
               </div>
-              <div className="space-y-1">
-                <span className="text-[8px] font-bold text-gray-400 uppercase tracking-widest ml-2">Game 2 (9 vs 10)</span>
+
+              {/* Game 2 */}
+              <div className="relative mt-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-[8px] font-black uppercase tracking-widest text-orange-500 bg-orange-500/10 px-2 py-0.5 rounded">Game 2</span>
+                  <span className="text-[8px] font-bold text-gray-400 uppercase tracking-widest">9 vs 10</span>
+                </div>
                 <MatchupCard 
                   matchupId={`PI_${c}_B`}
                   team1={piB_t1 || null}
@@ -122,12 +148,22 @@ export const TournamentBracket: React.FC<TournamentBracketProps> = ({
                   onPick={(teamId, len) => onPick(`PI_${c}_B`, teamId, len)}
                   isLocked={isLocked}
                 />
+                
+                {/* Winner to Game 3 Connector */}
+                <div className="absolute -right-8 top-1/2 -translate-y-1/2 flex items-center text-orange-500/40">
+                  <CornerUpRight className="w-6 h-6" />
+                  <span className="text-[7px] font-bold uppercase tracking-tighter ml-1">Winner</span>
+                </div>
               </div>
             </div>
 
-            <div className="flex flex-col justify-center">
-              <div className="space-y-1">
-                <span className="text-[8px] font-bold text-gray-400 uppercase tracking-widest ml-2">Game 3 (Winner to 8th)</span>
+            {/* Game 3 Column */}
+            <div className="flex flex-col justify-center pt-8">
+              <div className="relative">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-[8px] font-black uppercase tracking-widest text-orange-500 bg-orange-500/10 px-2 py-0.5 rounded">Game 3</span>
+                  <span className="text-[8px] font-bold text-gray-400 uppercase tracking-widest">Final Spot</span>
+                </div>
                 <MatchupCard 
                   matchupId={`PI_${c}_C`}
                   team1={piLoserA || null}
@@ -137,6 +173,14 @@ export const TournamentBracket: React.FC<TournamentBracketProps> = ({
                   onPick={(teamId, len) => onPick(`PI_${c}_C`, teamId, len)}
                   isLocked={isLocked}
                 />
+                
+                {/* Winner to 8th Indicator */}
+                <div className="absolute -right-8 top-1/2 -translate-y-1/2 flex items-center gap-1 text-orange-500">
+                  <ArrowRight className="w-4 h-4 animate-pulse" />
+                  <div className="hidden lg:block absolute left-6 whitespace-nowrap">
+                    <span className="text-[7px] font-black uppercase tracking-tighter bg-orange-500 text-white px-1.5 py-0.5 rounded shadow-sm">Winner to 8th Seed</span>
+                  </div>
+                </div>
               </div>
             </div>
           </div>

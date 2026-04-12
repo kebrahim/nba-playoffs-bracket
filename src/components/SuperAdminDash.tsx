@@ -18,6 +18,11 @@ export const SuperAdminDash: React.FC = () => {
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
 
   useEffect(() => {
+    const formatDateForInput = (date: Date) => {
+      const offset = date.getTimezoneOffset() * 60000;
+      return new Date(date.getTime() - offset).toISOString().slice(0, 16);
+    };
+
     const fetchData = async () => {
       try {
         const teamsSnap = await getDocs(query(collection(db, 'teams'), orderBy('seed', 'asc')));
@@ -34,8 +39,8 @@ export const SuperAdminDash: React.FC = () => {
             picksOpenTime: openDate,
             picksLockTime: lockDate
           });
-          setOpenTimeStr(openDate.toISOString().slice(0, 16));
-          setLockTimeStr(lockDate.toISOString().slice(0, 16));
+          setOpenTimeStr(formatDateForInput(openDate));
+          setLockTimeStr(formatDateForInput(lockDate));
         } else {
           // Default settings if none exist
           const openDate = new Date();
@@ -44,8 +49,8 @@ export const SuperAdminDash: React.FC = () => {
             picksOpenTime: openDate,
             picksLockTime: lockDate
           });
-          setOpenTimeStr(openDate.toISOString().slice(0, 16));
-          setLockTimeStr(lockDate.toISOString().slice(0, 16));
+          setOpenTimeStr(formatDateForInput(openDate));
+          setLockTimeStr(formatDateForInput(lockDate));
         }
         setSeries(seriesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as SeriesResult)));
       } catch (error) {
