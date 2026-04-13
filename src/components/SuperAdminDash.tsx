@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { db } from '../firebase';
 import { collection, doc, getDocs, getDoc, setDoc, updateDoc, query, orderBy, writeBatch, deleteDoc, Timestamp } from 'firebase/firestore';
 import { Team, Conference, GlobalSettings, SeriesResult } from '../types/database';
-import { Shield, Users, Calendar, Trophy, Save, AlertTriangle, Plus, Trash2 } from 'lucide-react';
+import { Shield, Users, Calendar, Trophy, Save, AlertTriangle, Plus, Trash2, Eye } from 'lucide-react';
 
 export const SuperAdminDash: React.FC = () => {
   const [teams, setTeams] = useState<Team[]>([]);
@@ -211,6 +211,16 @@ export const SuperAdminDash: React.FC = () => {
         <div>
           <h1 className="text-4xl font-black uppercase italic tracking-tighter text-gray-900">Super Admin <span className="text-red-500">Command</span></h1>
           <p className="text-gray-500 font-medium uppercase tracking-widest text-xs">Global Tournament Configuration</p>
+          <div className="mt-2">
+            <a 
+              href="/league/preview?preview=true" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="text-[10px] font-black uppercase tracking-widest text-orange-500 hover:underline flex items-center gap-1"
+            >
+              <Eye className="w-3 h-3" /> Preview Leaderboard UI
+            </a>
+          </div>
         </div>
         <div className="ml-auto">
           <button 

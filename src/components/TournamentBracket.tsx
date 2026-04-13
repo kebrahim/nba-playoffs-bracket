@@ -82,7 +82,7 @@ export const TournamentBracket: React.FC<TournamentBracketProps> = ({
     const r1_2v7 = { t1: getTeamBySeed(conf, 2), t2: piWinner7 };
     const r1_3v6 = { t1: getTeamBySeed(conf, 3), t2: getTeamBySeed(conf, 6) };
 
-    const r1Matchups = [r1_1v8, r1_4v5, r1_2v7, r1_3v6];
+    const r1Matchups = [r1_1v8, r1_4v5, r1_3v6, r1_2v7];
 
     // Round 2 Matchups
     const r2_1 = { t1: getWinner(`R1_${c}_1`), t2: getWinner(`R1_${c}_2`) };
@@ -102,83 +102,89 @@ export const TournamentBracket: React.FC<TournamentBracketProps> = ({
           <div className="flex flex-col sm:flex-row items-center gap-12 relative">
             {/* Game 1 & 2 Column */}
             <div className="flex flex-col gap-12 relative">
-              {/* Game 1 */}
-              <div className="relative">
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="text-[8px] font-black uppercase tracking-widest text-orange-500 bg-orange-500/10 px-2 py-0.5 rounded">Game 1</span>
-                  <span className="text-[8px] font-bold text-gray-400 uppercase tracking-widest">7 vs 8</span>
-                </div>
-                <MatchupCard 
-                  matchupId={`PI_${c}_A`}
-                  team1={piA_t1 || null}
-                  team2={piA_t2 || null}
-                  userPick={getPick(`PI_${c}_A`) as any}
-                  actualResult={getResult(`PI_${c}_A`)}
-                  onPick={(teamId, len) => onPick(`PI_${c}_A`, teamId, len)}
-                  isLocked={isLocked}
-                />
-                
-                {/* Winner to 7th Indicator */}
-                <div className="absolute -right-8 top-1/2 -translate-y-1/2 flex items-center gap-1 text-orange-500">
-                  <ArrowRight className="w-4 h-4 animate-pulse" />
-                  <div className="hidden lg:block absolute left-6 whitespace-nowrap">
-                    <span className="text-[7px] font-black uppercase tracking-tighter bg-orange-500 text-white px-1.5 py-0.5 rounded shadow-sm">Winner to 7th Seed</span>
-                  </div>
-                </div>
-
-                {/* Loser to Game 3 Connector */}
-                <div className="absolute left-1/2 -bottom-8 -translate-x-1/2 flex flex-col items-center gap-1">
-                  <div className="w-px h-6 bg-gradient-to-b from-black/20 to-transparent" />
-                  <span className="text-[7px] font-bold text-gray-400 uppercase tracking-tighter">Loser to Game 3</span>
-                </div>
-              </div>
-
-              {/* Game 2 */}
-              <div className="relative mt-4">
+              {/* Game 2 (9 vs 10) */}
+              <div className="relative w-48">
                 <div className="flex items-center gap-2 mb-2">
                   <span className="text-[8px] font-black uppercase tracking-widest text-orange-500 bg-orange-500/10 px-2 py-0.5 rounded">Game 2</span>
                   <span className="text-[8px] font-bold text-gray-400 uppercase tracking-widest">9 vs 10</span>
                 </div>
-                <MatchupCard 
-                  matchupId={`PI_${c}_B`}
-                  team1={piB_t1 || null}
-                  team2={piB_t2 || null}
-                  userPick={getPick(`PI_${c}_B`) as any}
-                  actualResult={getResult(`PI_${c}_B`)}
-                  onPick={(teamId, len) => onPick(`PI_${c}_B`, teamId, len)}
-                  isLocked={isLocked}
-                />
-                
-                {/* Winner to Game 3 Connector */}
-                <div className="absolute -right-8 top-1/2 -translate-y-1/2 flex items-center text-orange-500/40">
-                  <CornerUpRight className="w-6 h-6" />
-                  <span className="text-[7px] font-bold uppercase tracking-tighter ml-1">Winner</span>
+                <div className="relative">
+                  <MatchupCard 
+                    matchupId={`PI_${c}_B`}
+                    team1={piB_t1 || null}
+                    team2={piB_t2 || null}
+                    userPick={getPick(`PI_${c}_B`) as any}
+                    actualResult={getResult(`PI_${c}_B`)}
+                    onPick={(teamId, len) => onPick(`PI_${c}_B`, teamId, len)}
+                    isLocked={isLocked}
+                  />
+                  
+                  {/* Winner to Game 3 Connector */}
+                  <div className="absolute -right-8 top-1/2 -translate-y-1/2 flex items-center text-orange-500/40">
+                    <CornerDownRight className="w-6 h-6" />
+                    <span className="text-[7px] font-bold uppercase tracking-tighter ml-1">Winner</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Game 1 (7 vs 8) */}
+              <div className="relative w-48">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-[8px] font-black uppercase tracking-widest text-orange-500 bg-orange-500/10 px-2 py-0.5 rounded">Game 1</span>
+                  <span className="text-[8px] font-bold text-gray-400 uppercase tracking-widest">7 vs 8</span>
+                </div>
+                <div className="relative">
+                  <MatchupCard 
+                    matchupId={`PI_${c}_A`}
+                    team1={piA_t1 || null}
+                    team2={piA_t2 || null}
+                    userPick={getPick(`PI_${c}_A`) as any}
+                    actualResult={getResult(`PI_${c}_A`)}
+                    onPick={(teamId, len) => onPick(`PI_${c}_A`, teamId, len)}
+                    isLocked={isLocked}
+                  />
+                  
+                  {/* Winner to 7th Indicator */}
+                  <div className="absolute -right-8 top-1/2 -translate-y-1/2 flex items-center gap-1 text-orange-500">
+                    <ArrowRight className="w-4 h-4" />
+                    <div className="hidden lg:block absolute left-6 whitespace-nowrap">
+                      <span className="text-[7px] font-black uppercase tracking-tighter bg-orange-500 text-white px-1.5 py-0.5 rounded shadow-sm">Winner to 7th Seed</span>
+                    </div>
+                  </div>
+
+                  {/* Loser to Game 3 Connector */}
+                  <div className="absolute -right-8 top-1/2 -translate-y-1/2 flex items-center text-gray-400/40 translate-y-6">
+                    <CornerUpRight className="w-6 h-6" />
+                    <span className="text-[7px] font-bold uppercase tracking-tighter ml-1">Loser to Game 3</span>
+                  </div>
                 </div>
               </div>
             </div>
 
             {/* Game 3 Column */}
-            <div className="flex flex-col justify-center pt-8">
-              <div className="relative">
+            <div className="flex flex-col justify-center w-48">
+              <div className="relative w-48">
                 <div className="flex items-center gap-2 mb-2">
                   <span className="text-[8px] font-black uppercase tracking-widest text-orange-500 bg-orange-500/10 px-2 py-0.5 rounded">Game 3</span>
-                  <span className="text-[8px] font-bold text-gray-400 uppercase tracking-widest">Final Spot</span>
+                  <span className="text-[7px] font-black uppercase tracking-tighter bg-orange-500 text-white px-1.5 py-0.5 rounded shadow-sm">Winner to 8th Seed</span>
                 </div>
-                <MatchupCard 
-                  matchupId={`PI_${c}_C`}
-                  team1={piLoserA || null}
-                  team2={piWinnerB || null}
-                  userPick={getPick(`PI_${c}_C`) as any}
-                  actualResult={getResult(`PI_${c}_C`)}
-                  onPick={(teamId, len) => onPick(`PI_${c}_C`, teamId, len)}
-                  isLocked={isLocked}
-                />
-                
-                {/* Winner to 8th Indicator */}
-                <div className="absolute -right-8 top-1/2 -translate-y-1/2 flex items-center gap-1 text-orange-500">
-                  <ArrowRight className="w-4 h-4 animate-pulse" />
-                  <div className="hidden lg:block absolute left-6 whitespace-nowrap">
-                    <span className="text-[7px] font-black uppercase tracking-tighter bg-orange-500 text-white px-1.5 py-0.5 rounded shadow-sm">Winner to 8th Seed</span>
+                <div className="relative">
+                  <MatchupCard 
+                    matchupId={`PI_${c}_C`}
+                    team1={piLoserA || null}
+                    team2={piWinnerB || null}
+                    userPick={getPick(`PI_${c}_C`) as any}
+                    actualResult={getResult(`PI_${c}_C`)}
+                    onPick={(teamId, len) => onPick(`PI_${c}_C`, teamId, len)}
+                    isLocked={isLocked}
+                  />
+                  
+                  {/* Winner to 8th Indicator */}
+                  <div className="absolute -right-8 top-1/2 -translate-y-1/2 flex items-center gap-1 text-orange-500">
+                    <ArrowRight className="w-4 h-4" />
+                    <div className="hidden lg:block absolute left-6 whitespace-nowrap">
+                      <span className="text-[7px] font-black uppercase tracking-tighter bg-orange-500 text-white px-1.5 py-0.5 rounded shadow-sm">Winner to 8th Seed</span>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -317,7 +323,7 @@ export const TournamentBracket: React.FC<TournamentBracketProps> = ({
               <p className="text-sm text-gray-500 font-bold uppercase tracking-[0.3em]">Larry O'Brien Trophy</p>
             </div>
             
-            <div className="relative">
+            <div className="relative w-48">
               {/* Decorative background for Finals */}
               <div className="absolute inset-0 bg-orange-500/10 blur-3xl rounded-full -z-10" />
               <MatchupCard 

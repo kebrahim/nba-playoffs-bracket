@@ -30,4 +30,7 @@ body {
     -ms-overflow-style: none;
     scrollbar-width: none;
   }
+  .animate-spin-slow {
+    animation: spin 3s linear infinite;
+  }
 }

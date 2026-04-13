@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { db } from '../firebase';
 import { collection, query, where, orderBy, onSnapshot, getDocs, doc } from 'firebase/firestore';
-import { Bracket, User, League } from '../types/database';
-import { Trophy, Medal, ChevronRight, Hash } from 'lucide-react';
+import { Bracket, User, League, Team, PickStatus } from '../types/database';
+import { Trophy, Medal, ChevronRight, Hash, Eye } from 'lucide-react';
 
 interface LeaderboardProps {
   leagueId: string;
@@ -15,11 +15,60 @@ interface LeaderboardEntry extends Bracket {
 
 export const Leaderboard: React.FC<LeaderboardProps> = ({ leagueId }) => {
   const navigate = useNavigate();
+  const location = useLocation();
+  const isPreview = new URLSearchParams(location.search).get('preview') === 'true';
+  
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
+  const [teams, setTeams] = useState<Record<string, Team>>({});
   const [loading, setLoading] = useState(true);
   const [isLocked, setIsLocked] = useState(false);
 
   useEffect(() => {
+    if (isPreview) {
+      // Mock data for preview
+      const mockTeams: Record<string, Team> = {
+        'bos': { id: 'bos', teamName: 'Celtics', conference: 'East' as any, seed: 1, apiTeamId: 1 },
+        'den': { id: 'den', teamName: 'Nuggets', conference: 'West' as any, seed: 2, apiTeamId: 2 },
+        'mil': { id: 'mil', teamName: 'Bucks', conference: 'East' as any, seed: 3, apiTeamId: 3 },
+        'okc': { id: 'okc', teamName: 'Thunder', conference: 'West' as any, seed: 1, apiTeamId: 4 }
+      };
+      setTeams(mockTeams);
+      
+      const mockEntries: LeaderboardEntry[] = [
+        {
+          id: '1', userId: 'u1', leagueId: 'l1', userName: 'Bracket King', totalScore: 120, tiebreakerPrediction: 215,
+          picks: [
+            { matchupId: 'FINALS', predictedTeamId: 'bos', predictedSeriesLength: 6, predictedRound: 4, status: PickStatus.PENDING },
+            { matchupId: 'CF_E', predictedTeamId: 'bos', predictedSeriesLength: 5, predictedRound: 3, status: PickStatus.PENDING },
+            { matchupId: 'CF_W', predictedTeamId: 'den', predictedSeriesLength: 7, predictedRound: 3, status: PickStatus.PENDING }
+          ],
+          playInPicks: []
+        },
+        {
+          id: '2', userId: 'u2', leagueId: 'l1', userName: 'HoopsMaster', totalScore: 120, tiebreakerPrediction: 208,
+          picks: [
+            { matchupId: 'FINALS', predictedTeamId: 'den', predictedSeriesLength: 7, predictedRound: 4, status: PickStatus.PENDING },
+            { matchupId: 'CF_E', predictedTeamId: 'mil', predictedSeriesLength: 6, predictedRound: 3, status: PickStatus.PENDING },
+            { matchupId: 'CF_W', predictedTeamId: 'den', predictedSeriesLength: 6, predictedRound: 3, status: PickStatus.PENDING }
+          ],
+          playInPicks: []
+        },
+        {
+          id: '3', userId: 'u3', leagueId: 'l1', userName: 'UnderdogFan', totalScore: 95, tiebreakerPrediction: 195,
+          picks: [
+            { matchupId: 'FINALS', predictedTeamId: 'okc', predictedSeriesLength: 7, predictedRound: 4, status: PickStatus.PENDING },
+            { matchupId: 'CF_E', predictedTeamId: 'bos', predictedSeriesLength: 4, predictedRound: 3, status: PickStatus.PENDING },
+            { matchupId: 'CF_W', predictedTeamId: 'okc', predictedSeriesLength: 7, predictedRound: 3, status: PickStatus.PENDING }
+          ],
+          playInPicks: []
+        }
+      ];
+      setEntries(mockEntries);
+      setIsLocked(true);
+      setLoading(false);
+      return;
+    }
+
     if (!leagueId) return;
 
     // First check if picks are locked globally
@@ -30,6 +79,17 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({ leagueId }) => {
         setIsLocked(new Date() > lockTime);
       }
     });
+
+    // Fetch teams for lookup
+    const fetchTeams = async () => {
+      const teamsSnap = await getDocs(collection(db, 'teams'));
+      const teamMap: Record<string, Team> = {};
+      teamsSnap.forEach(doc => {
+        teamMap[doc.id] = { id: doc.id, ...doc.data() } as Team;
+      });
+      setTeams(teamMap);
+    };
+    fetchTeams();
 
     // Listen to the league to get the current participants list
     const leagueRef = doc(db, 'leagues', leagueId);
@@ -124,8 +184,42 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({ leagueId }) => {
     return firstIndexWithScore + 1;
   };
 
+  const getFinalsPrediction = (entry: LeaderboardEntry) => {
+    const finalsPick = entry.picks.find(p => p.matchupId === 'FINALS');
+    if (!finalsPick) return null;
+
+    const winner = teams[finalsPick.predictedTeamId];
+    if (!winner) return null;
+
+    // To find the loser, we need to know who was in the Finals.
+    // In our system, the Finals matchup is CF_E winner vs CF_W winner.
+    const cfEPick = entry.picks.find(p => p.matchupId === 'CF_E');
+    const cfWPick = entry.picks.find(p => p.matchupId === 'CF_W');
+
+    if (!cfEPick || !cfWPick) return null;
+
+    const teamE = teams[cfEPick.predictedTeamId];
+    const teamW = teams[cfWPick.predictedTeamId];
+
+    if (!teamE || !teamW) return null;
+
+    const loser = finalsPick.predictedTeamId === teamE.id ? teamW : teamE;
+
+    return {
+      winnerName: winner.teamName,
+      loserName: loser.teamName,
+      games: finalsPick.predictedSeriesLength
+    };
+  };
+
   return (
     <div className="space-y-3">
+      {isPreview && (
+        <div className="bg-orange-500/10 border border-orange-500/30 p-3 rounded-xl flex items-center justify-center gap-2 mb-4">
+          <Eye className="w-4 h-4 text-orange-500" />
+          <span className="text-[10px] font-black uppercase tracking-widest text-orange-500">UI Preview Mode (Mock Data)</span>
+        </div>
+      )}
       <div className="flex items-center justify-between px-6 py-2 text-[10px] font-black uppercase tracking-widest text-gray-500">
         <div className="flex items-center gap-8">
           <span className="w-8">Rank</span>
@@ -175,6 +269,28 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({ leagueId }) => {
                     </span>
                     {isLocked && <ChevronRight className="w-3 h-3 text-orange-500 opacity-0 group-hover:opacity-100 transition-all" />}
                   </div>
+                  {isLocked && (
+                    <div className="mt-1 flex items-center gap-2">
+                      {(() => {
+                        const pred = getFinalsPrediction(entry);
+                        if (!pred) return <span className="text-[9px] text-gray-400 font-bold uppercase tracking-tighter">No Finals Pick</span>;
+                        return (
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[9px] font-black text-orange-500 uppercase italic">
+                              {pred.winnerName}
+                            </span>
+                            <span className="text-[8px] font-bold text-gray-400 uppercase">over</span>
+                            <span className="text-[9px] font-bold text-gray-600 uppercase italic">
+                              {pred.loserName}
+                            </span>
+                            <span className="text-[8px] font-black text-gray-400 bg-black/5 px-1 rounded">
+                              IN {pred.games}
+                            </span>
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  )}
                 </div>
               </div>
 

@@ -44,9 +44,9 @@ export const MatchupCard: React.FC<MatchupCardProps> = ({
   };
 
   return (
-    <div className="relative group">
+    <div className="relative group w-48">
       {/* Glassmorphism Container */}
-      <div className="w-48 bg-white/70 backdrop-blur-xl border border-black/10 rounded-xl overflow-hidden shadow-2xl transition-all hover:border-orange-500/50">
+      <div className="w-full bg-white/70 backdrop-blur-xl border border-black/10 rounded-xl overflow-hidden shadow-2xl transition-all hover:border-orange-500/50">
         {/* Team 1 */}
         <div 
           onClick={() => !isLocked && team1 && onPick?.(team1.id, 4)}

@@ -9,8 +9,9 @@ import { db } from '../firebase';
 import { onSnapshot, doc, setDoc, getDocs, collection, query, where } from 'firebase/firestore';
 import { Leaderboard } from './Leaderboard';
 import { Bracket, PlayInPick } from '../types/database';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Clock } from 'lucide-react';
 import { auth } from '../firebase';
+import { CountdownTimer } from './CountdownTimer';
 
 enum OperationType {
   CREATE = 'create',
@@ -148,13 +149,15 @@ export const LeagueBracketView: React.FC = () => {
   const [pendingBracket, setPendingBracket] = useState<Bracket | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [isLocked, setIsLocked] = useState(false);
+  const [lockTime, setLockTime] = useState<Date | null>(null);
 
   useEffect(() => {
     const settingsRef = doc(db, 'globalSettings', 'config');
     const unsub = onSnapshot(settingsRef, (snap) => {
       if (snap.exists()) {
-        const lockTime = snap.data().picksLockTime.toDate();
-        setIsLocked(new Date() > lockTime);
+        const time = snap.data().picksLockTime.toDate();
+        setLockTime(time);
+        setIsLocked(new Date() > time);
       }
     });
     return () => unsub();
@@ -306,6 +309,10 @@ export const LeagueBracketView: React.FC = () => {
               <span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Invite Code: {league?.inviteCode}</span>
             </div>
           </div>
+        </div>
+
+        <div className="hidden lg:flex items-center justify-center flex-1 px-8">
+          <CountdownTimer lockTime={lockTime} />
         </div>
 
         <div className="flex items-center gap-3 bg-white/60 backdrop-blur-xl p-1.5 rounded-2xl border border-black/5">
