@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../firebase';
-import { collection, doc, getDocs, getDoc, setDoc, updateDoc, query, orderBy, writeBatch, deleteDoc, Timestamp } from 'firebase/firestore';
+import { collection, doc, getDocs, getDoc, setDoc, updateDoc, query, orderBy, writeBatch, deleteDoc, Timestamp, where } from 'firebase/firestore';
 import { Team, Conference, GlobalSettings, SeriesResult } from '../types/database';
 import { Shield, Users, Calendar, Trophy, Save, AlertTriangle, Plus, Trash2, Eye } from 'lucide-react';
 
 export const SuperAdminDash: React.FC = () => {
   const [teams, setTeams] = useState<Team[]>([]);
+  const [leagues, setLeagues] = useState<any[]>([]);
   const [settings, setSettings] = useState<GlobalSettings | null>(null);
   const [openTimeStr, setOpenTimeStr] = useState('');
   const [lockTimeStr, setLockTimeStr] = useState('');
@@ -15,6 +16,7 @@ export const SuperAdminDash: React.FC = () => {
   const [syncingStandings, setSyncingStandings] = useState(false);
   const [clearingPicks, setClearingPicks] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
 
   useEffect(() => {
@@ -26,11 +28,13 @@ export const SuperAdminDash: React.FC = () => {
     const fetchData = async () => {
       try {
         const teamsSnap = await getDocs(query(collection(db, 'teams'), orderBy('seed', 'asc')));
+        const leaguesSnap = await getDocs(collection(db, 'leagues'));
         const settingsRef = doc(db, 'globalSettings', 'config');
         const settingsSnap = await getDoc(settingsRef);
         const seriesSnap = await getDocs(collection(db, 'seriesResults'));
 
         setTeams(teamsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Team)));
+        setLeagues(leaguesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
         if (settingsSnap.exists()) {
           const data = settingsSnap.data();
           const openDate = data.picksOpenTime.toDate();
@@ -197,6 +201,29 @@ export const SuperAdminDash: React.FC = () => {
       setMessage({ type: 'error', text: error instanceof Error ? error.message : 'Failed to clear picks.' });
     } finally {
       setClearingPicks(false);
+    }
+  };
+
+  const handleDeleteLeague = async (leagueId: string) => {
+    try {
+      // 1. Delete all brackets associated with this league
+      const bracketsQuery = query(collection(db, 'brackets'), where('leagueId', '==', leagueId));
+      const bracketsSnap = await getDocs(bracketsQuery);
+      
+      const batch = writeBatch(db);
+      bracketsSnap.docs.forEach(d => batch.delete(d.ref));
+      
+      // 2. Delete the league itself
+      batch.delete(doc(db, 'leagues', leagueId));
+      
+      await batch.commit();
+      
+      setLeagues(leagues.filter(l => l.id !== leagueId));
+      setConfirmDeleteId(null);
+      setMessage({ type: 'success', text: 'Contest and all associated picks deleted successfully.' });
+    } catch (error) {
+      console.error("Delete League Error:", error);
+      setMessage({ type: 'error', text: 'Failed to delete contest.' });
     }
   };
 
@@ -379,6 +406,59 @@ export const SuperAdminDash: React.FC = () => {
               </div>
             </div>
           ))}
+        </div>
+      </section>
+
+      {/* Contest Management */}
+      <section className="bg-white/70 backdrop-blur-xl border border-black/10 rounded-3xl p-8">
+        <div className="flex items-center gap-3 mb-8">
+          <Trophy className="w-6 h-6 text-orange-500" />
+          <h2 className="text-xl font-bold uppercase italic text-gray-900">Contest Management</h2>
+        </div>
+        
+        <div className="space-y-4">
+          {leagues.length === 0 ? (
+            <p className="text-gray-500 text-sm italic">No active contests found.</p>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {leagues.map(league => (
+                <div key={league.id} className="p-4 bg-black/5 border border-black/5 rounded-2xl flex items-center justify-between group">
+                  <div>
+                    <h3 className="text-sm font-black uppercase italic text-gray-900">{league.leagueName}</h3>
+                    <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">
+                      Code: {league.inviteCode} • {league.participants?.length || 0} Players
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {confirmDeleteId === league.id ? (
+                      <div className="flex items-center gap-2 animate-in fade-in zoom-in duration-300">
+                        <button 
+                          onClick={() => setConfirmDeleteId(null)}
+                          className="text-[10px] font-bold text-gray-500 hover:text-gray-900"
+                        >
+                          Cancel
+                        </button>
+                        <button 
+                          onClick={() => handleDeleteLeague(league.id)}
+                          className="bg-red-500 text-white text-[10px] font-black uppercase px-3 py-1.5 rounded-lg hover:bg-red-600 transition-all shadow-lg shadow-red-500/20"
+                        >
+                          Confirm Delete
+                        </button>
+                      </div>
+                    ) : (
+                      <button 
+                        onClick={() => setConfirmDeleteId(league.id)}
+                        className="p-2 text-gray-400 hover:text-red-500 transition-colors"
+                        title="Delete Contest"
+                      >
+                        <Trash2 className="w-5 h-5" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </section>
 

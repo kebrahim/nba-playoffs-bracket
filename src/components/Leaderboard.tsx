@@ -3,7 +3,8 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { db } from '../firebase';
 import { collection, query, where, orderBy, onSnapshot, getDocs, doc } from 'firebase/firestore';
 import { Bracket, User, League, Team, PickStatus } from '../types/database';
-import { Trophy, Medal, ChevronRight, Hash, Eye } from 'lucide-react';
+import { Trophy, Medal, ChevronRight, Hash, Eye, CheckCircle2, AlertCircle } from 'lucide-react';
+import { useAuth } from '../contexts/AuthContext';
 
 interface LeaderboardProps {
   leagueId: string;
@@ -16,6 +17,7 @@ interface LeaderboardEntry extends Bracket {
 export const Leaderboard: React.FC<LeaderboardProps> = ({ leagueId }) => {
   const navigate = useNavigate();
   const location = useLocation();
+  const { isAdmin } = useAuth();
   const isPreview = new URLSearchParams(location.search).get('preview') === 'true';
   
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
@@ -184,6 +186,13 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({ leagueId }) => {
     return firstIndexWithScore + 1;
   };
 
+  const checkCompletion = (entry: LeaderboardEntry) => {
+    const totalPicks = (entry.picks?.length || 0) + (entry.playInPicks?.length || 0);
+    const hasTiebreaker = (entry.tiebreakerPrediction || 0) > 0;
+    const isComplete = totalPicks >= 21 && hasTiebreaker;
+    return { isComplete, count: totalPicks, hasTiebreaker };
+  };
+
   const getFinalsPrediction = (entry: LeaderboardEntry) => {
     const finalsPick = entry.picks.find(p => p.matchupId === 'FINALS');
     if (!finalsPick) return null;
@@ -267,6 +276,27 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({ leagueId }) => {
                     <span className="font-bold uppercase italic tracking-tight group-hover:text-orange-500 transition-colors">
                       {entry.userName}
                     </span>
+                    {isAdmin && (
+                      <div className="flex items-center gap-1.5 ml-2">
+                        {(() => {
+                          const { isComplete, count, hasTiebreaker } = checkCompletion(entry);
+                          if (isComplete) {
+                            return (
+                              <div className="flex items-center gap-1 text-[8px] font-black uppercase tracking-widest text-green-500 bg-green-500/10 px-1.5 py-0.5 rounded">
+                                <CheckCircle2 className="w-2.5 h-2.5" />
+                                Picks In
+                              </div>
+                            );
+                          }
+                          return (
+                            <div className="flex items-center gap-1 text-[8px] font-black uppercase tracking-widest text-red-500 bg-red-500/10 px-1.5 py-0.5 rounded">
+                              <AlertCircle className="w-2.5 h-2.5" />
+                              {count}/21 {!hasTiebreaker && '+ TB'}
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    )}
                     {isLocked && <ChevronRight className="w-3 h-3 text-orange-500 opacity-0 group-hover:opacity-100 transition-all" />}
                   </div>
                   {isLocked && (

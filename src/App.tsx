@@ -1,7 +1,7 @@
 import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate, useParams } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ErrorBoundary } from './components/ErrorBoundary';
-import { Trophy, ShieldCheck, Loader2 } from 'lucide-react';
+import { Trophy, ShieldCheck, Loader2, AlertTriangle } from 'lucide-react';
 import { LeagueLobby } from './components/LeagueLobby';
 import { LeagueBracketView } from './components/LeagueBracketView';
 import { SuperAdminDash } from './components/SuperAdminDash';
@@ -205,6 +205,7 @@ const LobbyView = () => {
   const { user, userData, isAdmin } = useAuth();
   const navigate = useNavigate();
   const { leagues } = useLeagues(user?.uid, userData?.joinedLeagueIds);
+  const [error, setError] = useState<string | null>(null);
 
   // Auto-repair missing commissioner names for existing leagues
   useEffect(() => {
@@ -226,12 +227,13 @@ const LobbyView = () => {
   const handleJoinLeague = async (code: string) => {
     if (!user || !code) return;
     const cleanCode = code.trim().toUpperCase();
+    setError(null);
     try {
       const q = query(collection(db, 'leagues'), where('inviteCode', '==', cleanCode));
       const querySnapshot = await getDocs(q);
       
       if (querySnapshot.empty) {
-        alert("Invalid invite code.");
+        setError("Invalid invite code. Please check and try again.");
         return;
       }
 
@@ -255,7 +257,7 @@ const LobbyView = () => {
       navigate(`/league/${leagueId}`);
     } catch (error) {
       console.error("Error joining league:", error);
-      alert("Failed to join league. Please try again later.");
+      setError("Failed to join league. Please try again later.");
       try {
         handleFirestoreError(error, OperationType.UPDATE, 'leagues');
       } catch (e) {
@@ -309,13 +311,21 @@ const LobbyView = () => {
   };
 
   return (
-    <LeagueLobby 
-      leagues={leagues}
-      onJoinLeague={handleJoinLeague}
-      onCreateLeague={handleCreateLeague}
-      onSelectLeague={(id) => navigate(`/league/${id}`)}
-      isAdmin={isAdmin}
-    />
+    <div className="space-y-6">
+      {error && (
+        <div className="p-4 bg-red-500/10 border border-red-500/50 rounded-xl text-red-400 text-sm flex items-center gap-3 animate-in fade-in slide-in-from-top-2">
+          <AlertTriangle className="w-5 h-5" />
+          {error}
+        </div>
+      )}
+      <LeagueLobby 
+        leagues={leagues}
+        onJoinLeague={handleJoinLeague}
+        onCreateLeague={handleCreateLeague}
+        onSelectLeague={(id) => navigate(`/league/${id}`)}
+        isAdmin={isAdmin}
+      />
+    </div>
   );
 };
 

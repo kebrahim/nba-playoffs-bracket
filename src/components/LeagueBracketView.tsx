@@ -259,7 +259,7 @@ export const LeagueBracketView: React.FC = () => {
   };
 
   return (
-    <div className="space-y-8">
+    <div className={`space-y-8 transition-all duration-500 ${pendingBracket ? 'pb-48' : ''}`}>
       {pendingBracket && (
         <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[100] flex items-center gap-4 bg-white/90 backdrop-blur-2xl border border-black/10 p-4 rounded-2xl shadow-2xl animate-in fade-in slide-in-from-bottom-4">
           <div className="flex flex-col">
@@ -352,6 +352,9 @@ export const LeagueBracketView: React.FC = () => {
       ) : (
         <Leaderboard leagueId={leagueId!} />
       )}
+
+      {/* Explicit spacer for fixed overlay */}
+      {pendingBracket && <div className="h-24" aria-hidden="true" />}
     </div>
   );
 };
