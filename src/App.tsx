@@ -1,11 +1,12 @@
 import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate, useParams } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ErrorBoundary } from './components/ErrorBoundary';
-import { Trophy, ShieldCheck, Loader2, AlertTriangle } from 'lucide-react';
+import { Trophy, ShieldCheck, Loader2, AlertTriangle, User as UserIcon } from 'lucide-react';
 import { LeagueLobby } from './components/LeagueLobby';
 import { LeagueBracketView } from './components/LeagueBracketView';
 import { SuperAdminDash } from './components/SuperAdminDash';
 import { CommissionerDash } from './components/CommissionerDash';
+import { ProfileSettings } from './components/ProfileSettings';
 import { Login } from './components/Login';
 import { SignUp } from './components/SignUp';
 import { ForgotPassword } from './components/ForgotPassword';
@@ -167,11 +168,21 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
           
           <div className="flex items-center gap-4">
             {user ? (
-              <div className="flex items-center gap-3">
-                <span className="text-sm text-gray-600 hidden sm:inline">{userData?.displayName || user.email}</span>
+              <div className="flex items-center gap-4">
+                <button 
+                  onClick={() => navigate('/profile')}
+                  className="flex items-center gap-2 group"
+                >
+                  <div className="w-8 h-8 rounded-full bg-orange-500/10 border border-orange-500/20 flex items-center justify-center group-hover:bg-orange-500/20 transition-all">
+                    <UserIcon className="w-4 h-4 text-orange-500" />
+                  </div>
+                  <span className="text-sm font-bold text-gray-700 group-hover:text-orange-500 transition-colors hidden sm:inline">
+                    {userData?.displayName || user.email?.split('@')[0]}
+                  </span>
+                </button>
                 <button 
                   onClick={() => auth.signOut()}
-                  className="text-xs bg-black/5 hover:bg-black/10 border border-black/10 px-3 py-1.5 rounded-full transition-all"
+                  className="text-xs bg-black/5 hover:bg-black/10 border border-black/10 px-3 py-1.5 rounded-full transition-all font-bold uppercase tracking-widest"
                 >
                   Sign Out
                 </button>
@@ -403,6 +414,14 @@ export default function App() {
               <ProtectedRoute requireAdmin>
                 <Layout>
                   <SuperAdminDash />
+                </Layout>
+              </ProtectedRoute>
+            } />
+
+            <Route path="/profile" element={
+              <ProtectedRoute>
+                <Layout>
+                  <ProfileSettings />
                 </Layout>
               </ProtectedRoute>
             } />

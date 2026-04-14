@@ -21,6 +21,7 @@ export enum PickStatus {
 export interface User {
   uid: string;
   displayName: string;
+  email?: string;
   systemRole: SystemRole;
   joinedLeagueIds: string[];
 }

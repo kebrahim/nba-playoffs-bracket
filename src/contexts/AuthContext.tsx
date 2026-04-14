@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
-import { doc, onSnapshot, setDoc } from 'firebase/firestore';
+import { doc, onSnapshot, setDoc, updateDoc } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 import { User, SystemRole } from '../types/database';
 
@@ -27,15 +27,42 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const userDocRef = doc(db, 'users', currentUser.uid);
         const unsubscribeDoc = onSnapshot(userDocRef, async (docSnap) => {
           if (docSnap.exists()) {
-            setUserData(docSnap.data() as User);
+            const data = docSnap.data() as User;
+            setUserData(data);
+
+            // Auto-repair: If the name is still "User", or if email is missing, update it
+            if (currentUser.email && (data.displayName === 'User' || !data.email || data.email !== currentUser.email)) {
+              const emailPrefix = currentUser.email.split('@')[0];
+              const updates: Partial<User> = {};
+              
+              if (data.displayName === 'User') {
+                updates.displayName = emailPrefix;
+              }
+              
+              if (!data.email || data.email !== currentUser.email) {
+                updates.email = currentUser.email;
+              }
+              
+              if (Object.keys(updates).length > 0) {
+                console.log(`Auto-repairing user data for ${currentUser.uid}:`, updates);
+                updateDoc(userDocRef, updates).catch(err => {
+                  console.error("Error auto-repairing user document:", err);
+                });
+              }
+            }
           } else {
             // Default user data if not found
             // Check if this is the bootstrap admin email
             const isBootstrapAdmin = currentUser.email === 'kebrahim@gmail.com';
             
+            // Use email prefix as default name if displayName is missing
+            const emailPrefix = currentUser.email ? currentUser.email.split('@')[0] : 'User';
+            const defaultName = currentUser.displayName || emailPrefix;
+            
             const newUserData: User = {
               uid: currentUser.uid,
-              displayName: currentUser.displayName || 'User',
+              displayName: defaultName,
+              email: currentUser.email || undefined,
               systemRole: isBootstrapAdmin ? SystemRole.SUPER_ADMIN : SystemRole.STANDARD,
               joinedLeagueIds: []
             };

@@ -112,50 +112,62 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({ leagueId }) => {
         bracketsMap[doc.data().userId] = { id: doc.id, ...doc.data() } as Bracket;
       });
 
-      // Fetch user details for all participants
+      // Fetch user details for all participants reactively
       const userMap: Record<string, string> = {};
+      let unsubUsers: (() => void) | null = null;
       if (participants.length > 0) {
-        // Firestore 'in' query limit is 30, but for simplicity we'll assume small leagues or handle in chunks if needed.
-        // For now, let's just fetch them. If participants > 30, we'd need multiple queries.
         const chunks = [];
         for (let i = 0; i < participants.length; i += 30) {
           chunks.push(participants.slice(i, i + 30));
         }
 
-        for (const chunk of chunks) {
-          const usersSnap = await getDocs(query(collection(db, 'users'), where('uid', 'in', chunk)));
+        // For simplicity with multiple chunks, we'll use a combined listener approach
+        // though usually leagues are small (< 30).
+        const usersQuery = query(collection(db, 'users'), where('uid', 'in', chunks[0]));
+        unsubUsers = onSnapshot(usersQuery, (usersSnap) => {
           usersSnap.forEach(doc => {
             const data = doc.data() as User;
-            userMap[data.uid] = data.displayName;
+            let name = data.displayName;
+            if (name === 'User' && data.email) {
+              name = data.email.split('@')[0];
+            }
+            userMap[data.uid] = name;
           });
-        }
+
+          // Merge participants with their brackets (if any)
+          const allEntries: LeaderboardEntry[] = participants.map(uid => {
+            const bracket = bracketsMap[uid];
+            return {
+              id: bracket?.id || `temp_${uid}`,
+              userId: uid,
+              leagueId: leagueId,
+              picks: bracket?.picks || [],
+              playInPicks: bracket?.playInPicks || [],
+              tiebreakerPrediction: bracket?.tiebreakerPrediction || 0,
+              totalScore: bracket?.totalScore || 0,
+              userName: userMap[uid] || 'Unknown User'
+            };
+          });
+
+          // Sort by score desc, then by name
+          allEntries.sort((a, b) => {
+            if ((b.totalScore || 0) !== (a.totalScore || 0)) {
+              return (b.totalScore || 0) - (a.totalScore || 0);
+            }
+            return a.userName.localeCompare(b.userName);
+          });
+
+          setEntries(allEntries);
+          setLoading(false);
+        });
+      } else {
+        setEntries([]);
+        setLoading(false);
       }
 
-      // Merge participants with their brackets (if any)
-      const allEntries: LeaderboardEntry[] = participants.map(uid => {
-        const bracket = bracketsMap[uid];
-        return {
-          id: bracket?.id || `temp_${uid}`,
-          userId: uid,
-          leagueId: leagueId,
-          picks: bracket?.picks || [],
-          playInPicks: bracket?.playInPicks || [],
-          tiebreakerPrediction: bracket?.tiebreakerPrediction || 0,
-          totalScore: bracket?.totalScore || 0,
-          userName: userMap[uid] || 'Unknown User'
-        };
-      });
-
-      // Sort by score desc, then by name
-      allEntries.sort((a, b) => {
-        if ((b.totalScore || 0) !== (a.totalScore || 0)) {
-          return (b.totalScore || 0) - (a.totalScore || 0);
-        }
-        return a.userName.localeCompare(b.userName);
-      });
-
-      setEntries(allEntries);
-      setLoading(false);
+      return () => {
+        if (unsubUsers) unsubUsers();
+      };
     }, (error) => {
       console.error("Leaderboard error:", error);
       if (error.code === 'permission-denied') {

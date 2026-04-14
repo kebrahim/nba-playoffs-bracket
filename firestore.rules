@@ -83,7 +83,7 @@ service cloud.firestore {
     // Users
     match /users/{userId} {
       allow read: if true;
-      allow write: if isOwner(userId);
+      allow write: if isOwner(userId) || isSuperAdmin();
     }
   }
 }

@@ -1,12 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../firebase';
-import { collection, doc, getDocs, getDoc, setDoc, updateDoc, query, orderBy, writeBatch, deleteDoc, Timestamp, where } from 'firebase/firestore';
+import { collection, doc, getDocs, getDoc, setDoc, updateDoc, query, orderBy, writeBatch, deleteDoc, Timestamp, where, onSnapshot } from 'firebase/firestore';
 import { Team, Conference, GlobalSettings, SeriesResult } from '../types/database';
-import { Shield, Users, Calendar, Trophy, Save, AlertTriangle, Plus, Trash2, Eye } from 'lucide-react';
+import { Shield, Users, Calendar, Trophy, Save, AlertTriangle, Plus, Trash2, Eye, Pencil } from 'lucide-react';
 
 export const SuperAdminDash: React.FC = () => {
   const [teams, setTeams] = useState<Team[]>([]);
   const [leagues, setLeagues] = useState<any[]>([]);
+  const [allUsers, setAllUsers] = useState<Record<string, any>>({});
+  const [selectedLeagueForPlayers, setSelectedLeagueForPlayers] = useState<string | null>(null);
+  const [editingUserId, setEditingUserId] = useState<string | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editEmail, setEditEmail] = useState('');
+  const [confirmRemoveParticipantId, setConfirmRemoveParticipantId] = useState<string | null>(null);
   const [settings, setSettings] = useState<GlobalSettings | null>(null);
   const [openTimeStr, setOpenTimeStr] = useState('');
   const [lockTimeStr, setLockTimeStr] = useState('');
@@ -17,6 +23,7 @@ export const SuperAdminDash: React.FC = () => {
   const [clearingPicks, setClearingPicks] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [removingParticipant, setRemovingParticipant] = useState<string | null>(null);
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
 
   useEffect(() => {
@@ -24,6 +31,14 @@ export const SuperAdminDash: React.FC = () => {
       const offset = date.getTimezoneOffset() * 60000;
       return new Date(date.getTime() - offset).toISOString().slice(0, 16);
     };
+
+    const unsubUsers = onSnapshot(collection(db, 'users'), (snap) => {
+      const userMap: Record<string, any> = {};
+      snap.forEach(doc => {
+        userMap[doc.id] = doc.data();
+      });
+      setAllUsers(userMap);
+    });
 
     const fetchData = async () => {
       try {
@@ -35,6 +50,7 @@ export const SuperAdminDash: React.FC = () => {
 
         setTeams(teamsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Team)));
         setLeagues(leaguesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+        
         if (settingsSnap.exists()) {
           const data = settingsSnap.data();
           const openDate = data.picksOpenTime.toDate();
@@ -157,6 +173,21 @@ export const SuperAdminDash: React.FC = () => {
     }
   };
 
+  const handleUpdateUser = async (userId: string) => {
+    if (!editName.trim()) return;
+    try {
+      await updateDoc(doc(db, 'users', userId), {
+        displayName: editName.trim(),
+        email: editEmail.trim() || null
+      });
+      setEditingUserId(null);
+      setMessage({ type: 'success', text: 'User updated successfully.' });
+    } catch (error) {
+      console.error("Update User Error:", error);
+      setMessage({ type: 'error', text: 'Failed to update user.' });
+    }
+  };
+
   const handleClearAllPicks = async () => {
     setClearingPicks(true);
     setMessage(null);
@@ -224,6 +255,53 @@ export const SuperAdminDash: React.FC = () => {
     } catch (error) {
       console.error("Delete League Error:", error);
       setMessage({ type: 'error', text: 'Failed to delete contest.' });
+    }
+  };
+
+  const handleRemoveParticipant = async (leagueId: string, userId: string) => {
+    setRemovingParticipant(userId);
+    try {
+      const league = leagues.find(l => l.id === leagueId);
+      if (!league) throw new Error("League not found");
+
+      const newParticipants = (league.participants || []).filter((id: string) => id !== userId);
+      
+      const batch = writeBatch(db);
+      
+      // 1. Update league participants
+      batch.update(doc(db, 'leagues', leagueId), {
+        participants: newParticipants
+      });
+
+      // 2. Update user's joined leagues
+      const userDocRef = doc(db, 'users', userId);
+      const userDoc = await getDoc(userDocRef);
+      if (userDoc.exists()) {
+        const joinedLeagues = (userDoc.data().joinedLeagueIds || []).filter((id: string) => id !== leagueId);
+        batch.update(userDocRef, {
+          joinedLeagueIds: joinedLeagues
+        });
+      }
+
+      // 3. Delete their bracket for this league
+      const bracketsQuery = query(
+        collection(db, 'brackets'), 
+        where('leagueId', '==', leagueId),
+        where('userId', '==', userId)
+      );
+      const bracketsSnap = await getDocs(bracketsQuery);
+      bracketsSnap.docs.forEach(d => batch.delete(d.ref));
+
+      await batch.commit();
+
+      setLeagues(leagues.map(l => l.id === leagueId ? { ...l, participants: newParticipants } : l));
+      setConfirmRemoveParticipantId(null);
+      setMessage({ type: 'success', text: 'Participant removed successfully.' });
+    } catch (error) {
+      console.error("Remove Participant Error:", error);
+      setMessage({ type: 'error', text: error instanceof Error ? error.message : 'Failed to remove participant.' });
+    } finally {
+      setRemovingParticipant(null);
     }
   };
 
@@ -339,6 +417,79 @@ export const SuperAdminDash: React.FC = () => {
         </section>
       </div>
 
+      {/* User Management */}
+      <section className="bg-white/70 backdrop-blur-xl border border-black/10 rounded-3xl p-8 space-y-6">
+        <div className="flex items-center gap-3 mb-4">
+          <Users className="w-6 h-6 text-orange-500" />
+          <h2 className="text-xl font-bold uppercase italic text-gray-900">User Management</h2>
+        </div>
+        <p className="text-[10px] text-gray-500 italic mb-4">
+          Note: Emails are populated automatically when users log in. If a user hasn't logged in since the email tracking update, their email will show as "No Email". You can manually add/edit them by clicking the pencil icon.
+        </p>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 max-h-[500px] overflow-y-auto pr-2 custom-scrollbar p-1">
+          {Object.values(allUsers).sort((a, b) => (a.displayName || '').localeCompare(b.displayName || '')).map((user: any) => (
+            <div key={user.uid} className="p-4 bg-black/5 rounded-2xl border border-black/5 flex items-center justify-between group hover:border-orange-500/30 transition-all">
+              <div className="flex flex-col min-w-0">
+                {editingUserId === user.uid ? (
+                  <div className="flex flex-col gap-2">
+                    <input 
+                      type="text"
+                      value={editName}
+                      onChange={(e) => setEditName(e.target.value)}
+                      placeholder="Display Name"
+                      className="bg-white border border-black/10 rounded-lg px-2 py-1 text-sm font-bold outline-none focus:border-orange-500 w-full"
+                      autoFocus
+                    />
+                    <input 
+                      type="email"
+                      value={editEmail}
+                      onChange={(e) => setEditEmail(e.target.value)}
+                      placeholder="Email Address"
+                      className="bg-white border border-black/10 rounded-lg px-2 py-1 text-[10px] font-mono outline-none focus:border-orange-500 w-full"
+                    />
+                    <div className="flex items-center gap-2">
+                      <button 
+                        onClick={() => handleUpdateUser(user.uid)}
+                        className="flex-1 bg-orange-500 text-white text-[10px] font-black uppercase py-1 rounded-lg hover:bg-orange-600 transition-all"
+                      >
+                        Save
+                      </button>
+                      <button 
+                        onClick={() => setEditingUserId(null)}
+                        className="flex-1 bg-black/5 text-gray-500 text-[10px] font-black uppercase py-1 rounded-lg hover:bg-black/10 transition-all"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-black text-gray-900 uppercase italic truncate">{user.displayName}</span>
+                      <button 
+                        onClick={() => {
+                          setEditingUserId(user.uid);
+                          setEditName(user.displayName);
+                          setEditEmail(user.email || '');
+                        }}
+                        className="p-1 text-gray-400 hover:text-orange-500 transition-all"
+                        title="Edit User"
+                      >
+                        <Pencil className="w-3 h-3" />
+                      </button>
+                    </div>
+                    <span className="text-[10px] font-mono text-gray-400 truncate">{user.email || 'No Email'}</span>
+                  </>
+                )}
+              </div>
+              <div className="text-[10px] font-black uppercase tracking-widest text-gray-400 bg-black/5 px-2 py-1 rounded shrink-0 ml-2">
+                {user.systemRole === 'SuperAdmin' ? 'ADMIN' : 'USER'}
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
       {/* Team Seeding */}
       <section className="bg-white/70 backdrop-blur-xl border border-black/10 rounded-3xl p-8">
         <div className="flex items-center justify-between mb-8">
@@ -422,39 +573,109 @@ export const SuperAdminDash: React.FC = () => {
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {leagues.map(league => (
-                <div key={league.id} className="p-4 bg-black/5 border border-black/5 rounded-2xl flex items-center justify-between group">
-                  <div>
-                    <h3 className="text-sm font-black uppercase italic text-gray-900">{league.leagueName}</h3>
-                    <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">
-                      Code: {league.inviteCode} • {league.participants?.length || 0} Players
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {confirmDeleteId === league.id ? (
-                      <div className="flex items-center gap-2 animate-in fade-in zoom-in duration-300">
-                        <button 
-                          onClick={() => setConfirmDeleteId(null)}
-                          className="text-[10px] font-bold text-gray-500 hover:text-gray-900"
-                        >
-                          Cancel
-                        </button>
-                        <button 
-                          onClick={() => handleDeleteLeague(league.id)}
-                          className="bg-red-500 text-white text-[10px] font-black uppercase px-3 py-1.5 rounded-lg hover:bg-red-600 transition-all shadow-lg shadow-red-500/20"
-                        >
-                          Confirm Delete
-                        </button>
+                <div key={league.id} className="space-y-2">
+                  <div className="p-4 bg-black/5 border border-black/5 rounded-2xl flex items-center justify-between group">
+                    <div>
+                      <h3 className="text-sm font-black uppercase italic text-gray-900">{league.leagueName}</h3>
+                      <div className="flex flex-col">
+                        <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">
+                          Comm: {league.commissionerName || 'Unknown'} <span className="text-gray-400">({allUsers[league.commissionerId]?.email || 'No Email'})</span>
+                        </p>
+                        <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">
+                          Code: {league.inviteCode} • {league.participants?.length || 0} Players
+                        </p>
                       </div>
-                    ) : (
+                    </div>
+                    <div className="flex items-center gap-2">
                       <button 
-                        onClick={() => setConfirmDeleteId(league.id)}
-                        className="p-2 text-gray-400 hover:text-red-500 transition-colors"
-                        title="Delete Contest"
+                        onClick={() => setSelectedLeagueForPlayers(selectedLeagueForPlayers === league.id ? null : league.id)}
+                        className={`p-2 transition-colors ${selectedLeagueForPlayers === league.id ? 'text-orange-500' : 'text-gray-400 hover:text-orange-500'}`}
+                        title="Manage Participants"
                       >
-                        <Trash2 className="w-5 h-5" />
+                        <Users className="w-5 h-5" />
                       </button>
-                    )}
+                      {confirmDeleteId === league.id ? (
+                        <div className="flex items-center gap-2 animate-in fade-in zoom-in duration-300">
+                          <button 
+                            onClick={() => setConfirmDeleteId(null)}
+                            className="text-[10px] font-bold text-gray-500 hover:text-gray-900"
+                          >
+                            Cancel
+                          </button>
+                          <button 
+                            onClick={() => handleDeleteLeague(league.id)}
+                            className="bg-red-500 text-white text-[10px] font-black uppercase px-3 py-1.5 rounded-lg hover:bg-red-600 transition-all shadow-lg shadow-red-500/20"
+                          >
+                            Confirm Delete
+                          </button>
+                        </div>
+                      ) : (
+                        <button 
+                          onClick={() => setConfirmDeleteId(league.id)}
+                          className="p-2 text-gray-400 hover:text-red-500 transition-colors"
+                          title="Delete Contest"
+                        >
+                          <Trash2 className="w-5 h-5" />
+                        </button>
+                      )}
+                    </div>
                   </div>
+                  
+                  {/* Participant Management Sub-panel */}
+                  {selectedLeagueForPlayers === league.id && (
+                    <div className="p-4 bg-white/50 border border-black/5 rounded-2xl animate-in slide-in-from-top-2 duration-300">
+                      <h4 className="text-[10px] font-black uppercase tracking-widest text-gray-500 mb-4">Manage Participants</h4>
+                      <div className="space-y-2">
+                        {(league.participants || []).length === 0 ? (
+                          <p className="text-[10px] text-gray-400 italic">No participants in this league.</p>
+                        ) : (
+                          league.participants.map((uid: string) => (
+                            <div key={uid} className="flex items-center justify-between p-2 bg-black/5 rounded-xl group/player">
+                              <div className="flex flex-col min-w-0">
+                                <span className="text-xs font-bold text-gray-900 truncate">{allUsers[uid]?.displayName || 'Unknown User'}</span>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-[8px] font-mono text-gray-400 truncate">{allUsers[uid]?.email || 'No Email'}</span>
+                                  <span className="text-[7px] font-mono text-gray-300">({uid.slice(0, 6)}...)</span>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                {confirmRemoveParticipantId === `${league.id}_${uid}` ? (
+                                  <div className="flex items-center gap-2 animate-in fade-in zoom-in duration-300">
+                                    <button 
+                                      onClick={() => setConfirmRemoveParticipantId(null)}
+                                      className="text-[8px] font-bold text-gray-500 hover:text-gray-900"
+                                    >
+                                      Cancel
+                                    </button>
+                                    <button 
+                                      onClick={() => handleRemoveParticipant(league.id, uid)}
+                                      disabled={removingParticipant === uid}
+                                      className="bg-red-500 text-white text-[8px] font-black uppercase px-2 py-1 rounded-md hover:bg-red-600 transition-all disabled:opacity-50 flex items-center gap-1"
+                                    >
+                                      {removingParticipant === uid ? (
+                                        <>
+                                          <div className="w-2 h-2 border border-white/30 border-t-white rounded-full animate-spin" />
+                                          ...
+                                        </>
+                                      ) : 'Confirm'}
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <button 
+                                    onClick={() => setConfirmRemoveParticipantId(`${league.id}_${uid}`)}
+                                    className="opacity-0 group-hover/player:opacity-100 p-1.5 text-gray-400 hover:text-red-500 transition-all"
+                                    title="Remove Participant"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
