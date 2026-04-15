@@ -6,7 +6,7 @@ import { League, Team, Pick, SeriesResult } from '../types/database';
 import { Settings } from 'lucide-react';
 
 import { db } from '../firebase';
-import { onSnapshot, doc, setDoc, getDocs, collection, query, where } from 'firebase/firestore';
+import { onSnapshot, doc, setDoc, getDocs, collection, query, where, getDoc } from 'firebase/firestore';
 import { Leaderboard } from './Leaderboard';
 import { Bracket, PlayInPick } from '../types/database';
 import { ArrowLeft, Clock } from 'lucide-react';
@@ -145,7 +145,16 @@ export const LeagueBracketView: React.FC = () => {
   const isViewingSelf = !paramUserId || paramUserId === user?.uid;
 
   const { teams, bracket, actualResults, league, loading } = useBracketData(leagueId, targetUserId);
-  const [activeTab, setActiveTab] = useState<'bracket' | 'leaderboard'>('bracket');
+  const [viewedUserName, setViewedUserName] = useState<string>('');
+  const [activeTab, setActiveTab] = useState<'bracket' | 'leaderboard'>('leaderboard');
+
+  useEffect(() => {
+    if (isViewingSelf) {
+      setActiveTab('leaderboard');
+    } else {
+      setActiveTab('bracket');
+    }
+  }, [isViewingSelf, leagueId]);
   const [pendingBracket, setPendingBracket] = useState<Bracket | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [isLocked, setIsLocked] = useState(false);
@@ -162,6 +171,26 @@ export const LeagueBracketView: React.FC = () => {
     });
     return () => unsub();
   }, []);
+
+  useEffect(() => {
+    if (!targetUserId) return;
+    const fetchViewedUser = async () => {
+      try {
+        const userDoc = await getDoc(doc(db, 'users', targetUserId));
+        if (userDoc.exists()) {
+          const data = userDoc.data();
+          let name = data.displayName;
+          if (name === 'User' && data.email) {
+            name = data.email.split('@')[0];
+          }
+          setViewedUserName(name);
+        }
+      } catch (error) {
+        console.error("Error fetching viewed user:", error);
+      }
+    };
+    fetchViewedUser();
+  }, [targetUserId]);
 
   useEffect(() => {
     // Reset pending changes when switching leagues or if bracket is externally updated
@@ -298,9 +327,25 @@ export const LeagueBracketView: React.FC = () => {
               {league?.leagueName}
             </h2>
             <div className="flex items-center gap-2 mt-1">
-              {!isViewingSelf && (
-                <span className="text-[10px] font-black uppercase tracking-widest text-blue-500 bg-blue-500/10 px-2 py-0.5 rounded">
-                  Viewing: {bracket?.userId === user?.uid ? 'My Bracket' : 'Opponent Bracket'}
+              {!isViewingSelf ? (
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-blue-500 bg-blue-500/10 px-2 py-0.5 rounded">
+                    Viewing: {viewedUserName || '...'}
+                  </span>
+                  <button 
+                    onClick={() => {
+                      setActiveTab('leaderboard');
+                      navigate(`/league/${leagueId}`);
+                    }}
+                    className="text-[10px] font-black uppercase tracking-widest text-gray-500 bg-black/5 px-2 py-0.5 rounded hover:bg-black/10 transition-all flex items-center gap-1"
+                  >
+                    <ArrowLeft className="w-2.5 h-2.5" />
+                    Back to Leaderboard
+                  </button>
+                </div>
+              ) : (
+                <span className="text-[10px] font-black uppercase tracking-widest text-green-500 bg-green-500/10 px-2 py-0.5 rounded">
+                  My Bracket
                 </span>
               )}
               <span className="text-[10px] font-black uppercase tracking-widest text-orange-500 bg-orange-500/10 px-2 py-0.5 rounded">
@@ -315,28 +360,30 @@ export const LeagueBracketView: React.FC = () => {
           <CountdownTimer lockTime={lockTime} />
         </div>
 
-        <div className="flex items-center gap-3 bg-white/60 backdrop-blur-xl p-1.5 rounded-2xl border border-black/5">
-          <button 
-            onClick={() => setActiveTab('bracket')}
-            className={`px-6 py-2 rounded-xl text-xs font-bold uppercase tracking-widest transition-all ${activeTab === 'bracket' ? 'bg-orange-500 text-white shadow-lg shadow-orange-500/20' : 'text-gray-500 hover:text-gray-900'}`}
-          >
-            My Bracket
-          </button>
-          <button 
-            onClick={() => setActiveTab('leaderboard')}
-            className={`px-6 py-2 rounded-xl text-xs font-bold uppercase tracking-widest transition-all ${activeTab === 'leaderboard' ? 'bg-orange-500 text-white shadow-lg shadow-orange-500/20' : 'text-gray-500 hover:text-gray-900'}`}
-          >
-            Leaderboard
-          </button>
-          {isCommissioner && (
-            <Link 
-              to={`/league/${leagueId}/settings`}
-              className="p-2 text-gray-500 hover:text-orange-500 transition-colors"
+        {isViewingSelf && (
+          <div className="flex items-center gap-3 bg-white/60 backdrop-blur-xl p-1.5 rounded-2xl border border-black/5">
+            <button 
+              onClick={() => setActiveTab('bracket')}
+              className={`px-6 py-2 rounded-xl text-xs font-bold uppercase tracking-widest transition-all ${activeTab === 'bracket' ? 'bg-orange-500 text-white shadow-lg shadow-orange-500/20' : 'text-gray-500 hover:text-gray-900'}`}
             >
-              <Settings className="w-5 h-5" />
-            </Link>
-          )}
-        </div>
+              My Bracket
+            </button>
+            <button 
+              onClick={() => setActiveTab('leaderboard')}
+              className={`px-6 py-2 rounded-xl text-xs font-bold uppercase tracking-widest transition-all ${activeTab === 'leaderboard' ? 'bg-orange-500 text-white shadow-lg shadow-orange-500/20' : 'text-gray-500 hover:text-gray-900'}`}
+            >
+              Leaderboard
+            </button>
+            {isCommissioner && (
+              <Link 
+                to={`/league/${leagueId}/settings`}
+                className="p-2 text-gray-500 hover:text-orange-500 transition-colors"
+              >
+                <Settings className="w-5 h-5" />
+              </Link>
+            )}
+          </div>
+        )}
       </div>
       
       {activeTab === 'bracket' ? (

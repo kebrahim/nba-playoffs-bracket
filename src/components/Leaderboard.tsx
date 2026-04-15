@@ -264,10 +264,8 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({ leagueId }) => {
           return (
             <div 
               key={entry.id}
-              onClick={() => isLocked && navigate(`/league/${leagueId}/user/${entry.userId}`)}
-              className={`group relative flex items-center justify-between px-6 py-5 bg-white/60 backdrop-blur-xl border border-black/5 rounded-2xl transition-all duration-500 ${
-                isLocked ? 'cursor-pointer hover:border-orange-500/50 hover:bg-black/5' : ''
-              } ${
+              onClick={() => navigate(`/league/${leagueId}/user/${entry.userId}`)}
+              className={`group relative flex items-center justify-between px-6 py-5 bg-white/60 backdrop-blur-xl border border-black/5 rounded-2xl transition-all duration-500 cursor-pointer hover:border-orange-500/50 hover:bg-black/5 ${
                 rank === 1 ? 'bg-gradient-to-r from-orange-500/10 to-transparent border-orange-500/20' : ''
               }`}
             >
@@ -309,7 +307,7 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({ leagueId }) => {
                         })()}
                       </div>
                     )}
-                    {isLocked && <ChevronRight className="w-3 h-3 text-orange-500 opacity-0 group-hover:opacity-100 transition-all" />}
+                    <ChevronRight className="w-3 h-3 text-orange-500 opacity-0 group-hover:opacity-100 transition-all" />
                   </div>
                   {isLocked && (
                     <div className="mt-1 flex items-center gap-2">
