@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../firebase';
-import { collection, doc, getDocs, getDoc, setDoc, updateDoc, query, orderBy, writeBatch, deleteDoc, Timestamp, where, onSnapshot } from 'firebase/firestore';
+import { collection, doc, getDocs, getDoc, setDoc, updateDoc, query, orderBy, writeBatch, deleteDoc, Timestamp, where, onSnapshot, serverTimestamp } from 'firebase/firestore';
 import { Team, Conference, GlobalSettings, SeriesResult } from '../types/database';
 import { Shield, Users, Calendar, Trophy, Save, AlertTriangle, Plus, Trash2, Eye, Pencil } from 'lucide-react';
 
@@ -19,11 +19,14 @@ export const SuperAdminDash: React.FC = () => {
   const [series, setSeries] = useState<SeriesResult[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
+  const [syncDate, setSyncDate] = useState('');
   const [syncingStandings, setSyncingStandings] = useState(false);
   const [clearingPicks, setClearingPicks] = useState(false);
+  const [testingApi, setTestingApi] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [removingParticipant, setRemovingParticipant] = useState<string | null>(null);
+  const [unmatchedGames, setUnmatchedGames] = useState<string[]>([]);
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
 
   useEffect(() => {
@@ -40,15 +43,20 @@ export const SuperAdminDash: React.FC = () => {
       setAllUsers(userMap);
     });
 
+    const unsubTeams = onSnapshot(query(collection(db, 'teams'), orderBy('seed', 'asc')), (snap) => {
+      setTeams(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Team)));
+    });
+
+    const unsubSeries = onSnapshot(collection(db, 'seriesResults'), (snap) => {
+      setSeries(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as SeriesResult)));
+    });
+
     const fetchData = async () => {
       try {
-        const teamsSnap = await getDocs(query(collection(db, 'teams'), orderBy('seed', 'asc')));
         const leaguesSnap = await getDocs(collection(db, 'leagues'));
         const settingsRef = doc(db, 'globalSettings', 'config');
         const settingsSnap = await getDoc(settingsRef);
-        const seriesSnap = await getDocs(collection(db, 'seriesResults'));
 
-        setTeams(teamsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Team)));
         setLeagues(leaguesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
         
         if (settingsSnap.exists()) {
@@ -72,7 +80,6 @@ export const SuperAdminDash: React.FC = () => {
           setOpenTimeStr(formatDateForInput(openDate));
           setLockTimeStr(formatDateForInput(lockDate));
         }
-        setSeries(seriesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as SeriesResult)));
       } catch (error) {
         console.error("Error fetching admin data:", error);
       } finally {
@@ -80,6 +87,12 @@ export const SuperAdminDash: React.FC = () => {
       }
     };
     fetchData();
+
+    return () => {
+      unsubUsers();
+      unsubTeams();
+      unsubSeries();
+    };
   }, []);
 
   const handleUpdateSettings = async (e: React.FormEvent) => {
@@ -121,32 +134,359 @@ export const SuperAdminDash: React.FC = () => {
     try {
       await updateDoc(doc(db, 'seriesResults', seriesId), {
         advancingTeamId: winnerId,
-        lastDataChanged: new Date()
+        lastDataChanged: serverTimestamp()
       });
       setMessage({ type: 'success', text: 'Series result overridden successfully.' });
+      
+      // Auto-trigger progression
+      setTimeout(() => handleRecalculateProgression(), 500);
     } catch (error) {
       setMessage({ type: 'error', text: 'Failed to override series.' });
+    }
+  };
+
+  const handleRecalculateProgression = async () => {
+    setSyncing(true);
+    try {
+      console.log("Admin: Recalculating bracket progression...");
+      const seriesSnap = await getDocs(collection(db, 'seriesResults'));
+      const allSeries = seriesSnap.docs.map(d => ({ id: d.id, ...d.data() } as any));
+      const batch = writeBatch(db);
+      let updatesCount = 0;
+
+      const updateSeries = (id: string, t1?: string, t2?: string) => {
+        const s = allSeries.find(x => x.id === id);
+        if (!s) return;
+        const updates: any = {};
+        if (t1 !== undefined && (!s.team1Id || s.team1Id !== t1)) updates.team1Id = t1;
+        if (t2 !== undefined && (!s.team2Id || s.team2Id !== t2)) updates.team2Id = t2;
+        
+        if (Object.keys(updates).length > 0) {
+          batch.update(doc(db, 'seriesResults', id), { ...updates, lastDataChanged: serverTimestamp() });
+          updatesCount++;
+        }
+      };
+
+      const getWinner = (id: string) => allSeries.find(s => s.id === id)?.advancingTeamId || '';
+      const getLoser = (id: string) => {
+        const s = allSeries.find(s => s.id === id);
+        if (!s || !s.advancingTeamId || !s.team1Id || !s.team2Id) return '';
+        return s.advancingTeamId === s.team1Id ? s.team2Id : s.team1Id;
+      };
+
+      // --- East ---
+      updateSeries('R1_E_2v7', undefined, getWinner('PI_E_A'));
+      updateSeries('PI_E_C', getLoser('PI_E_A'), getWinner('PI_E_B'));
+      updateSeries('R1_E_1v8', undefined, getWinner('PI_E_C'));
+
+      // --- West ---
+      updateSeries('R1_W_2v7', undefined, getWinner('PI_W_A'));
+      updateSeries('PI_W_C', getLoser('PI_W_A'), getWinner('PI_W_B'));
+      updateSeries('R1_W_1v8', undefined, getWinner('PI_W_C'));
+
+      // --- R1 to R2 ---
+      updateSeries('R2_E_M1', getWinner('R1_E_1v8'), getWinner('R1_E_4v5'));
+      updateSeries('R2_E_M2', getWinner('R1_E_2v7'), getWinner('R1_E_3v6'));
+      updateSeries('R2_W_M1', getWinner('R1_W_1v8'), getWinner('R1_W_4v5'));
+      updateSeries('R2_W_M2', getWinner('R1_W_2v7'), getWinner('R1_W_3v6'));
+
+      // --- R2 to CF ---
+      updateSeries('R3_E_CF', getWinner('R2_E_M1'), getWinner('R2_E_M2'));
+      updateSeries('R3_W_CF', getWinner('R2_W_M1'), getWinner('R2_W_M2'));
+
+      // --- Finals ---
+      updateSeries('R4_Finals', getWinner('R3_E_CF'), getWinner('R3_W_CF'));
+
+      if (updatesCount > 0) {
+        await batch.commit();
+        console.log(`Admin: Progression updated (${updatesCount} matches).`);
+      }
+    } catch (error) {
+      console.error("Progression Error:", error);
+    } finally {
+      setSyncing(false);
     }
   };
 
   const handleSyncAndCalculate = async () => {
     setSyncing(true);
     setMessage(null);
+    setUnmatchedGames([]);
+    console.log("--- SYNC DEBUG START ---");
+    console.log("Current Teams in State:", teams.map(t => `${t.id}: ${t.teamName} (API: ${t.apiTeamId}, Seed: ${t.seed})`));
+    console.log("Current Series in State:", series.map(s => `${s.id}: ${s.team1Id} vs ${s.team2Id}`));
+
     try {
-      // 1. Sync Results
-      const syncRes = await fetch('/api/sync-results', { method: 'POST' });
+      // 1. Fetch data from RapidAPI via Server Proxy (Server has the API Key)
+      console.log('Admin: Requesting NBA results from proxy...');
+      const url = syncDate ? `/api/proxy/nba-results?date=${syncDate.replace(/-/g, '')}` : '/api/proxy/nba-results';
+      const syncRes = await fetch(url, { method: 'GET' });
       const syncData = await syncRes.json();
+      
       if (syncData.status !== 'success') throw new Error(syncData.message);
+      
+      const games = syncData.games || [];
+      console.log(`Admin: Received ${games.length} games from API.`);
 
-      // 2. Calculate Scores
-      const calcRes = await fetch('/api/calculate-scores', { method: 'POST' });
-      const calcData = await calcRes.json();
-      if (calcData.status !== 'success') throw new Error(calcData.message);
+      if (games.length === 0) {
+        setMessage({ type: 'success', text: 'No completed games found for this date on the NBA API.' });
+        setSyncing(false);
+        return;
+      }
 
-      setMessage({ type: 'success', text: 'NBA results synced and scores recalculated successfully!' });
+      // 2. Process and Write to Firestore FRONTEND-SIDE
+      const batch = writeBatch(db);
+      let matchedCount = 0;
+      
+      // Update seriesResults
+      const localUnmatched: string[] = [];
+      for (const game of games) {
+        let seriesId = game.seriesId;
+        let winnerId = game.winnerId;
+        let totalGames = game.totalGames || 4;
+        
+        // Extract competitors using both direct paths and recursive search
+        let comps: any[] = [];
+        if (Array.isArray(game.competitions) && game.competitions[0]?.competitors) {
+          comps = game.competitions[0].competitors;
+        } else if (game.competitions?.competitors && Array.isArray(game.competitions.competitors)) {
+          comps = game.competitions.competitors;
+        } else if (Array.isArray(game.competitors)) {
+          comps = game.competitors;
+        } else {
+          // Recursive search as safety
+          const findCompetitors = (obj: any): any[] | null => {
+            if (!obj || typeof obj !== 'object') return null;
+            if (Array.isArray(obj.competitors) && obj.competitors.length > 0) return obj.competitors;
+            for (const key in obj) {
+              if (obj[key] && typeof obj[key] === 'object' && key !== 'status') {
+                const res = findCompetitors(obj[key]);
+                if (res) return res;
+              }
+            }
+            return null;
+          };
+          comps = findCompetitors(game) || [];
+        }
+
+        const t1Display = comps[0]?.team?.displayName || comps[0]?.displayName || "Team 1";
+        const t2Display = comps[1]?.team?.displayName || comps[1]?.displayName || "Team 2";
+        const gameNameUpdated = game.name || `${t1Display} vs ${t2Display}`;
+
+        console.log(`Processing Game: ${gameNameUpdated}`);
+
+        // Fallback: If server returned RAW games (because of IAM), do mapping here
+        if (!seriesId && comps.length >= 2) {
+           const win = comps.find((c: any) => 
+             c.winner === true || 
+             (c.score && Number(c.score) > Number(comps.find((o: any) => String(o.id || o.team?.id) !== String(c.id || c.team?.id))?.score))
+           );
+           const lose = comps.find((c: any) => 
+             c.winner === false || 
+             (c.score && Number(c.score) < Number(comps.find((o: any) => String(o.id || o.team?.id) !== String(c.id || c.team?.id))?.score))
+           );
+           
+           if (win && lose) {
+             const winApiId = Number(win.id || win.team?.id);
+             const loseApiId = Number(lose.id || lose.team?.id);
+             console.log(`- API Winner ID: ${winApiId}, Loser ID: ${loseApiId} (Scores: ${win.score} - ${lose.score})`);
+             
+             const winTeam = teams.find(t => Number(t.apiTeamId) === winApiId);
+             const loseTeam = teams.find(t => Number(t.apiTeamId) === loseApiId);
+             
+             if (winTeam && loseTeam) {
+                console.log(`- Found Teams: ${winTeam.id} (Winner) and ${loseTeam.id} (Loser)`);
+                winnerId = winTeam.id;
+                const match = series.find(s => {
+                  const s1 = String(s.team1Id).trim().toLowerCase();
+                  const s2 = String(s.team2Id).trim().toLowerCase();
+                  const w = String(winTeam.id).trim().toLowerCase();
+                  const l = String(loseTeam.id).trim().toLowerCase();
+                  return (s1 && s2) && ((s1 === w && s2 === l) || (s1 === l && s2 === w));
+                });
+                if (match) {
+                  seriesId = match.id;
+                  console.log(`- MATCHED to Series: ${seriesId}`);
+                } else {
+                  console.warn(`- NO SERIES FOUND in database for matchup [${winTeam.id} vs ${loseTeam.id}]. Searched ${series.length} series.`);
+                }
+             } else {
+                console.warn(`- TEAM MISSING: WinFound=${!!winTeam}, LoseFound=${!!loseTeam}`);
+                localUnmatched.push(`${gameNameUpdated} (IDs: ${winApiId} vs ${loseApiId}) - Missing internal team mapping.`);
+             }
+           } else {
+             console.warn(`- COULD NOT DETERMINE WINNER for ${gameNameUpdated}. comps.length: ${comps.length}. Values:`, comps.map((c:any) => `ID:${c.id || c.team?.id} Score:${c.score} Win:${c.winner}`));
+           }
+        } else if (!seriesId) {
+          console.warn(`- NO COMPETITORS found for ${gameNameUpdated}. Full game object:`, JSON.stringify(game));
+        }
+
+        if (seriesId) {
+          matchedCount++;
+          const ref = doc(db, 'seriesResults', seriesId);
+          batch.set(ref, {
+            advancingTeamId: winnerId,
+            totalGamesPlayed: totalGames,
+            lastDataChanged: serverTimestamp()
+          }, { merge: true });
+        } else if (!localUnmatched.some(u => u.startsWith(gameNameUpdated))) {
+          // If we didn't find a series match but we found teams, add to unmatched
+          localUnmatched.push(`${gameNameUpdated} - Team IDs matched, but no series record found for this pair.`);
+        }
+      }
+
+      setUnmatchedGames(localUnmatched);
+      console.log(`Sync Summary: Matched=${matchedCount}, Unmatched=${localUnmatched.length}`);
+
+      if (matchedCount === 0) {
+        setMessage({ 
+          type: 'error', 
+          text: `Found ${games.length} completed games, but none matched your active playoff matchups. Ensure your teams have the correct API IDs set.` 
+        });
+        setSyncing(false);
+        return;
+      }
+
+      // Update global trigger
+      batch.set(doc(db, 'globalSettings', 'config'), {
+        lastDataChanged: serverTimestamp()
+      }, { merge: true });
+
+      await batch.commit();
+      console.log('Admin: Results written to Firestore.');
+
+      // 3. Perform Score Calculation in Frontend (Bypassing Server IAM issues)
+      console.log('Admin: Starting client-side score recalculation...');
+      
+      const leaguesSnap = await getDocs(collection(db, 'leagues'));
+      const seriesResultsSnap = await getDocs(collection(db, 'seriesResults'));
+      const seriesResults = seriesResultsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+      for (const leagueDoc of leaguesSnap.docs) {
+        const leagueId = leagueDoc.id;
+        const leagueData = leagueDoc.data();
+        console.log(`- Calculating scores for league: ${leagueData.name || leagueId}`);
+        
+        const bracketsQuery = query(collection(db, 'brackets'), where('leagueId', '==', leagueId));
+        const bracketsSnap = await getDocs(bracketsQuery);
+        
+        const scores: { id: string, score: number, tiebreakerDiff: number }[] = [];
+        
+        for (const bDoc of bracketsSnap.docs) {
+          const b = bDoc.data();
+          let s = 0;
+          
+          // Round 1-4 Picks
+          if (leagueData.pointConfig && Array.isArray(b.picks)) {
+            b.picks.forEach((p: any) => {
+              const res = seriesResults.find((r: any) => r.id === p.matchupId) as any;
+              if (res?.advancingTeamId === p.predictedTeamId) {
+                s += (leagueData.pointConfig[`round${p.predictedRound}`] || 0);
+                if (res.totalGamesPlayed === p.predictedSeriesLength) {
+                  s += (leagueData.pointConfig.exactGamesBonus || 0);
+                }
+              }
+            });
+          }
+
+          // Play-In Picks
+          if (leagueData.pointConfig?.playIn && Array.isArray(b.playInPicks)) {
+            b.playInPicks.forEach((p: any) => {
+              const res = seriesResults.find((r: any) => r.id === p.matchupId) as any;
+              if (res?.advancingTeamId === p.predictedWinnerId) {
+                s += (leagueData.pointConfig.playIn || 0);
+              }
+            });
+          }
+
+          const actualFinalsPoints = (seriesResults.find((r: any) => r.round === 4) as any)?.actualFinalsTotalPoints || 0;
+          scores.push({ 
+            id: bDoc.id, 
+            score: s, 
+            tiebreakerDiff: Math.abs((b.tiebreakerPrediction || 0) - actualFinalsPoints) 
+          });
+        }
+
+        // Sort by score then tiebreaker
+        scores.sort((a, b) => (b.score - a.score) || (a.tiebreakerDiff - b.tiebreakerDiff));
+
+        // Batch update results in chunks of 50
+        for (let i = 0; i < scores.length; i += 50) {
+          const scoreBatch = writeBatch(db);
+          scores.slice(i, i + 50).forEach((item, idx) => {
+            scoreBatch.update(doc(db, 'brackets', item.id), { 
+              totalScore: item.score, 
+              rank: i + idx + 1 
+            });
+          });
+          await scoreBatch.commit();
+        }
+        
+        await updateDoc(doc(db, 'leagues', leagueId), { 
+          lastCalculated: serverTimestamp() 
+        });
+      }
+
+      // 4. Update Progression
+      await handleRecalculateProgression();
+
+      setMessage({ type: 'success', text: 'NBA results synced and scores recalculated successfully via frontend transition!' });
     } catch (error) {
       console.error("Sync/Calc Error:", error);
       setMessage({ type: 'error', text: error instanceof Error ? error.message : 'Failed to sync and calculate scores.' });
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const handleTestApi = async () => {
+    setTestingApi(true);
+    setMessage(null);
+    try {
+      const res = await fetch('/api/admin/test-api-connection');
+      const data = await res.json();
+      if (data.status === 'success') {
+        setMessage({ type: 'success', text: data.message });
+      } else {
+        setMessage({ type: 'error', text: `API Test Failed: ${data.message} ${data.details || ''}` });
+      }
+    } catch (error) {
+      console.error("API Test Error:", error);
+      setMessage({ type: 'error', text: 'Failed to run API test.' });
+    } finally {
+      setTestingApi(false);
+    }
+  };
+
+  const handleForceFullSync = async () => {
+    setSyncing(true);
+    setMessage(null);
+    try {
+      // 1. Sync Standings via Proxy
+      const standingsRes = await fetch('/api/proxy/nba-standings', { method: 'GET' });
+      const standingsData = await standingsRes.json();
+      if (standingsData.status !== 'success') throw new Error(standingsData.message);
+
+      const updates = standingsData.updates || [];
+      if (updates.length > 0) {
+        const batch = writeBatch(db);
+        updates.forEach((u: any) => {
+          batch.set(doc(db, 'teams', u.id), u.data, { merge: true });
+        });
+        await batch.commit();
+      }
+
+      // 2. Run Results Sync
+      await handleSyncAndCalculate();
+      
+      setMessage({ type: 'success', text: 'Full NBA Sync (Standings + Results) completed successfully!' });
+      
+      // Refresh teams list
+      const teamsSnap = await getDocs(query(collection(db, 'teams'), orderBy('seed', 'asc')));
+      setTeams(teamsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Team)));
+    } catch (error) {
+      console.error("Full Sync Error:", error);
+      setMessage({ type: 'error', text: error instanceof Error ? error.message : 'Failed to perform full sync.' });
     } finally {
       setSyncing(false);
     }
@@ -156,11 +496,21 @@ export const SuperAdminDash: React.FC = () => {
     setSyncingStandings(true);
     setMessage(null);
     try {
-      const res = await fetch('/api/sync-standings', { method: 'POST' });
+      const res = await fetch('/api/proxy/nba-standings', { method: 'GET' });
       const data = await res.json();
       if (data.status !== 'success') throw new Error(data.message);
 
-      setMessage({ type: 'success', text: 'NBA standings synced successfully! Refreshing teams...' });
+      const updates = data.updates || [];
+      if (updates.length > 0) {
+        const batch = writeBatch(db);
+        updates.forEach((u: any) => {
+          batch.set(doc(db, 'teams', u.id), u.data, { merge: true });
+        });
+        await batch.commit();
+        setMessage({ type: 'success', text: `NBA standings synced successfully! Refreshing teams...` });
+      } else {
+        setMessage({ type: 'success', text: 'No changes to standings.' });
+      }
       
       // Refresh teams list
       const teamsSnap = await getDocs(query(collection(db, 'teams'), orderBy('seed', 'asc')));
@@ -170,6 +520,79 @@ export const SuperAdminDash: React.FC = () => {
       setMessage({ type: 'error', text: error instanceof Error ? error.message : 'Failed to sync standings.' });
     } finally {
       setSyncingStandings(false);
+    }
+  };
+
+  const handleInitializeSeries = async () => {
+    setSyncing(true);
+    setMessage(null);
+    console.log("--- INIT MATCHUPS DEBUG START ---");
+    console.log("Teams in State:", teams.map(t => `${t.id}: ${t.teamName} (Conf: ${t.conference}, Seed: ${t.seed})`));
+    
+    try {
+      const batch = writeBatch(db);
+      const rounds = [
+        // Play-In
+        { id: 'PI_E_A', round: 0, conf: 'East', s1: 7, s2: 8 },
+        { id: 'PI_E_B', round: 0, conf: 'East', s1: 9, s2: 10 },
+        { id: 'PI_E_C', round: 0, conf: 'East' }, 
+        { id: 'PI_W_A', round: 0, conf: 'West', s1: 7, s2: 8 },
+        { id: 'PI_W_B', round: 0, conf: 'West', s1: 9, s2: 10 },
+        { id: 'PI_W_C', round: 0, conf: 'West' },
+        // Round 1
+        { id: 'R1_E_1v8', round: 1, conf: 'East', s1: 1 },
+        { id: 'R1_E_4v5', round: 1, conf: 'East', s1: 4, s2: 5 },
+        { id: 'R1_E_3v6', round: 1, conf: 'East', s1: 3, s2: 6 },
+        { id: 'R1_E_2v7', round: 1, conf: 'East', s1: 2 },
+        { id: 'R1_W_1v8', round: 1, conf: 'West', s1: 1 },
+        { id: 'R1_W_4v5', round: 1, conf: 'West', s1: 4, s2: 5 },
+        { id: 'R1_W_3v6', round: 1, conf: 'West', s1: 3, s2: 6 },
+        { id: 'R1_W_2v7', round: 1, conf: 'West', s1: 2 },
+        { id: 'R2_E_M1', round: 2, conf: 'East' },
+        { id: 'R2_E_M2', round: 2, conf: 'East' },
+        { id: 'R2_W_M1', round: 2, conf: 'West' },
+        { id: 'R2_W_M2', round: 2, conf: 'West' },
+        { id: 'R3_E_CF', round: 3, conf: 'East' },
+        { id: 'R3_W_CF', round: 3, conf: 'West' },
+        { id: 'R4_Finals', round: 4, conf: 'All' }
+      ];
+
+      for (const r of rounds) {
+        const ref = doc(db, 'seriesResults', r.id);
+        let t1 = '';
+        let t2 = '';
+        
+        if (r.s1) {
+          const t1Obj = teams.find(t => t.conference === r.conf && Number(t.seed) === r.s1);
+          t1 = t1Obj?.id || '';
+        }
+        if (r.s2) {
+          const t2Obj = teams.find(t => t.conference === r.conf && Number(t.seed) === r.s2);
+          t2 = t2Obj?.id || '';
+        }
+        
+        if (t1 || t2) {
+          console.log(`Initializing ${r.id}: ${t1 || 'TBD'} (Seed ${r.s1 || '?'}) vs ${t2 || 'TBD'} (Seed ${r.s2 || '?'})`);
+        }
+
+        batch.set(ref, {
+          round: r.round,
+          team1Id: t1,
+          team2Id: t2,
+          advancingTeamId: '',
+          eliminatedTeamId: '',
+          totalGamesPlayed: 0,
+          lastDataChanged: serverTimestamp()
+        }, { merge: true });
+      }
+
+      await batch.commit();
+      setMessage({ type: 'success', text: 'Playoff series matchups initialized successfully!' });
+    } catch (error) {
+      console.error("Init Series Error:", error);
+      setMessage({ type: 'error', text: 'Failed to initialize series.' });
+    } finally {
+      setSyncing(false);
     }
   };
 
@@ -327,7 +750,34 @@ export const SuperAdminDash: React.FC = () => {
             </a>
           </div>
         </div>
-        <div className="ml-auto">
+        <div className="ml-auto flex items-center gap-3">
+          <button 
+            onClick={handleTestApi}
+            disabled={testingApi || syncing}
+            className={`px-4 py-3 rounded-2xl font-black uppercase italic tracking-tighter transition-all flex items-center gap-2 ${testingApi ? 'bg-white/10 text-gray-500 cursor-not-allowed' : 'bg-black/5 hover:bg-black/10 text-gray-600 border border-black/10'}`}
+          >
+            {testingApi ? (
+              <>
+                <div className="w-3 h-3 border-2 border-gray-400/30 border-t-gray-400 rounded-full animate-spin" />
+                Testing...
+              </>
+            ) : (
+              <>
+                <Shield className="w-4 h-4" />
+                Test API
+              </>
+            )}
+          </button>
+          <div className="flex flex-col gap-1">
+            <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest px-1">Sync Date (Optional)</label>
+            <input 
+              type="date"
+              value={syncDate}
+              onChange={(e) => setSyncDate(e.target.value)}
+              className="px-3 py-2 rounded-xl text-xs bg-black/5 border border-black/10 outline-none focus:border-orange-500/50"
+            />
+            <p className="text-[9px] text-gray-400 mt-1 italic px-1">Background sync runs daily at 9AM. Manual sync defaults to 'Auto' if date is empty.</p>
+          </div>
           <button 
             onClick={handleSyncAndCalculate}
             disabled={syncing}
@@ -341,17 +791,62 @@ export const SuperAdminDash: React.FC = () => {
             ) : (
               <>
                 <Trophy className="w-5 h-5" />
-                Sync Data & Calculate Scores
+                Sync Results & Score
               </>
             )}
           </button>
         </div>
       </div>
 
+      <div className="flex items-center gap-4 bg-orange-500/5 border border-orange-500/20 p-4 rounded-2xl">
+        <div className="bg-orange-500/20 p-2 rounded-xl">
+          <AlertTriangle className="w-5 h-5 text-orange-500" />
+        </div>
+        <div className="flex-1">
+          <p className="text-sm font-bold text-gray-900">Utility Actions</p>
+          <p className="text-xs text-gray-500 font-medium">Use these during initial setup or to force updates.</p>
+        </div>
+        <button 
+          onClick={handleInitializeSeries}
+          disabled={syncing}
+          className="px-4 py-2 bg-white/50 hover:bg-white text-orange-600 border border-orange-200 rounded-xl text-xs font-black uppercase tracking-widest transition-all"
+        >
+          Init Matchups
+        </button>
+      </div>
+
       {message && (
-        <div className={`p-4 rounded-xl border ${message.type === 'success' ? 'bg-green-500/10 border-green-500/50 text-green-400' : 'bg-red-500/10 border-red-500/50 text-red-400'} flex items-center gap-3`}>
-          <AlertTriangle className="w-5 h-5" />
-          {message.text}
+        <div className={`p-6 rounded-3xl border animate-in zoom-in-95 duration-300 shadow-xl ${message.type === 'success' ? 'bg-emerald-500/10 border-emerald-500/50 text-emerald-400' : 'bg-red-500/10 border-red-500/50 text-red-400'}`}>
+          <div className="flex items-center gap-4 font-bold mb-3">
+            <div className={`p-2 rounded-xl ${message.type === 'success' ? 'bg-emerald-500/20' : 'bg-red-500/20'}`}>
+              {message.type === 'success' ? <Trophy className="w-5 h-5" /> : <Shield className="w-5 h-5" />}
+            </div>
+            <div className="flex flex-col">
+              <span className="text-xs uppercase tracking-[0.2em] opacity-60 leading-none mb-1">{message.type}</span>
+              <span className="text-xl leading-none">{message.text}</span>
+            </div>
+          </div>
+          
+          {unmatchedGames.length > 0 && message.type === 'error' && (
+            <div className="mt-6 pt-6 border-t border-red-500/20">
+              <div className="flex items-center justify-between mb-4">
+                <span className="text-[10px] uppercase tracking-widest font-black text-red-500 bg-red-500/10 px-2 py-0.5 rounded">Unmatched API Games</span>
+                <span className="text-[10px] font-bold opacity-50 uppercase tracking-widest">{unmatchedGames.length} Identified</span>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                {unmatchedGames.map((g, i) => (
+                  <div key={i} className="bg-black/20 border border-white/5 p-3 rounded-xl flex items-center justify-between group hover:border-red-500/30 transition-all">
+                    <span className="text-sm font-mono text-gray-400 group-hover:text-red-400 whitespace-nowrap overflow-hidden text-ellipsis mr-2">{g}</span>
+                  </div>
+                ))}
+              </div>
+              <p className="mt-6 text-[11px] leading-relaxed text-gray-500 font-medium max-w-lg">
+                <strong className="text-red-400 uppercase tracking-wider mr-1">Troubleshooting:</strong> 
+                These games exist on the NBA API but aren't mapped to a series in your database. 
+                This usually means these are <span className="text-orange-500 underline decoration-orange-500/30 decoration-2 underline-offset-2">Play-In Tournament</span> games which aren't part of the standard 1-8 seed bracket, or your teams have incorrect API IDs.
+              </p>
+            </div>
+          )}
         </div>
       )}
 

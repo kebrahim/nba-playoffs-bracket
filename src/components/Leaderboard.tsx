@@ -2,8 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { db } from '../firebase';
 import { collection, query, where, orderBy, onSnapshot, getDocs, doc } from 'firebase/firestore';
-import { Bracket, User, League, Team, PickStatus } from '../types/database';
-import { Trophy, Medal, ChevronRight, Hash, Eye, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Bracket, User, League, Team, PickStatus, SeriesResult, Conference } from '../types/database';
+import { Trophy, Medal, ChevronRight, Hash, Eye, CheckCircle2, AlertCircle, Clock } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
 interface LeaderboardProps {
@@ -12,6 +12,13 @@ interface LeaderboardProps {
 
 interface LeaderboardEntry extends Bracket {
   userName: string;
+  roundScores: {
+    playIn: number;
+    r1: number;
+    r2: number;
+    cf: number;
+    finals: number;
+  };
 }
 
 export const Leaderboard: React.FC<LeaderboardProps> = ({ leagueId }) => {
@@ -24,15 +31,63 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({ leagueId }) => {
   const [teams, setTeams] = useState<Record<string, Team>>({});
   const [loading, setLoading] = useState(true);
   const [isLocked, setIsLocked] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [seriesResults, setSeriesResults] = useState<Record<string, SeriesResult>>({});
+  const [leagueConfig, setLeagueConfig] = useState<League | null>(null);
+
+  const calculateEntryRoundScores = (bracket: Bracket, results: Record<string, SeriesResult>, config: League | null) => {
+    const scores = { playIn: 0, r1: 0, r2: 0, cf: 0, finals: 0 };
+    if (!config || !config.pointConfig) return scores;
+
+    // Play-In
+    bracket.playInPicks?.forEach(p => {
+      const res = results[p.matchupId];
+      if (res?.advancingTeamId === p.predictedWinnerId) {
+        scores.playIn += config.pointConfig.playIn || 0;
+      }
+    });
+
+    // Rounds 1-Finals
+    bracket.picks?.forEach(p => {
+      const res = results[p.matchupId];
+      if (res?.advancingTeamId === p.predictedTeamId) {
+        let pts = 0;
+        if (p.predictedRound === 1) {
+          pts = config.pointConfig.round1;
+          scores.r1 += pts;
+        } else if (p.predictedRound === 2) {
+          pts = config.pointConfig.round2;
+          scores.r2 += pts;
+        } else if (p.predictedRound === 3) {
+          pts = config.pointConfig.round3;
+          scores.cf += pts;
+        } else if (p.predictedRound === 4) {
+          pts = config.pointConfig.finals;
+          scores.finals += pts;
+        }
+
+        // Exact games bonus
+        if (res.totalGamesPlayed === p.predictedSeriesLength) {
+          const bonus = config.pointConfig.exactGamesBonus || 0;
+          if (p.predictedRound === 1) scores.r1 += bonus;
+          else if (p.predictedRound === 2) scores.r2 += bonus;
+          else if (p.predictedRound === 3) scores.cf += bonus;
+          else if (p.predictedRound === 4) scores.finals += bonus;
+        }
+      }
+    });
+
+    return scores;
+  };
 
   useEffect(() => {
     if (isPreview) {
       // Mock data for preview
       const mockTeams: Record<string, Team> = {
-        'bos': { id: 'bos', teamName: 'Celtics', conference: 'East' as any, seed: 1, apiTeamId: 1 },
-        'den': { id: 'den', teamName: 'Nuggets', conference: 'West' as any, seed: 2, apiTeamId: 2 },
-        'mil': { id: 'mil', teamName: 'Bucks', conference: 'East' as any, seed: 3, apiTeamId: 3 },
-        'okc': { id: 'okc', teamName: 'Thunder', conference: 'West' as any, seed: 1, apiTeamId: 4 }
+        'bos': { id: 'bos', teamName: 'Celtics', conference: Conference.EAST, seed: 1, apiTeamId: 1 },
+        'den': { id: 'den', teamName: 'Nuggets', conference: Conference.WEST, seed: 1, apiTeamId: 2 },
+        'mil': { id: 'mil', teamName: 'Bucks', conference: Conference.EAST, seed: 3, apiTeamId: 3 },
+        'okc': { id: 'okc', teamName: 'Thunder', conference: Conference.WEST, seed: 1, apiTeamId: 4 }
       };
       setTeams(mockTeams);
       
@@ -40,29 +95,32 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({ leagueId }) => {
         {
           id: '1', userId: 'u1', leagueId: 'l1', userName: 'Bracket King', totalScore: 120, tiebreakerPrediction: 215,
           picks: [
-            { matchupId: 'FINALS', predictedTeamId: 'bos', predictedSeriesLength: 6, predictedRound: 4, status: PickStatus.PENDING },
-            { matchupId: 'CF_E', predictedTeamId: 'bos', predictedSeriesLength: 5, predictedRound: 3, status: PickStatus.PENDING },
-            { matchupId: 'CF_W', predictedTeamId: 'den', predictedSeriesLength: 7, predictedRound: 3, status: PickStatus.PENDING }
+            { matchupId: 'R4_Finals', predictedTeamId: 'bos', predictedSeriesLength: 6, predictedRound: 4, status: PickStatus.PENDING },
+            { matchupId: 'R3_E_CF', predictedTeamId: 'bos', predictedSeriesLength: 5, predictedRound: 3, status: PickStatus.PENDING },
+            { matchupId: 'R3_W_CF', predictedTeamId: 'den', predictedSeriesLength: 7, predictedRound: 3, status: PickStatus.PENDING }
           ],
-          playInPicks: []
+          playInPicks: [],
+          roundScores: { playIn: 10, r1: 40, r2: 30, cf: 20, finals: 20 }
         },
         {
           id: '2', userId: 'u2', leagueId: 'l1', userName: 'HoopsMaster', totalScore: 120, tiebreakerPrediction: 208,
           picks: [
-            { matchupId: 'FINALS', predictedTeamId: 'den', predictedSeriesLength: 7, predictedRound: 4, status: PickStatus.PENDING },
-            { matchupId: 'CF_E', predictedTeamId: 'mil', predictedSeriesLength: 6, predictedRound: 3, status: PickStatus.PENDING },
-            { matchupId: 'CF_W', predictedTeamId: 'den', predictedSeriesLength: 6, predictedRound: 3, status: PickStatus.PENDING }
+            { matchupId: 'R4_Finals', predictedTeamId: 'den', predictedSeriesLength: 7, predictedRound: 4, status: PickStatus.PENDING },
+            { matchupId: 'R3_E_CF', predictedTeamId: 'mil', predictedSeriesLength: 6, predictedRound: 3, status: PickStatus.PENDING },
+            { matchupId: 'R3_W_CF', predictedTeamId: 'den', predictedSeriesLength: 6, predictedRound: 3, status: PickStatus.PENDING }
           ],
-          playInPicks: []
+          playInPicks: [],
+          roundScores: { playIn: 15, r1: 35, r2: 30, cf: 20, finals: 20 }
         },
         {
           id: '3', userId: 'u3', leagueId: 'l1', userName: 'UnderdogFan', totalScore: 95, tiebreakerPrediction: 195,
           picks: [
-            { matchupId: 'FINALS', predictedTeamId: 'okc', predictedSeriesLength: 7, predictedRound: 4, status: PickStatus.PENDING },
-            { matchupId: 'CF_E', predictedTeamId: 'bos', predictedSeriesLength: 4, predictedRound: 3, status: PickStatus.PENDING },
-            { matchupId: 'CF_W', predictedTeamId: 'okc', predictedSeriesLength: 7, predictedRound: 3, status: PickStatus.PENDING }
+            { matchupId: 'R4_Finals', predictedTeamId: 'okc', predictedSeriesLength: 7, predictedRound: 4, status: PickStatus.PENDING },
+            { matchupId: 'R3_E_CF', predictedTeamId: 'bos', predictedSeriesLength: 4, predictedRound: 3, status: PickStatus.PENDING },
+            { matchupId: 'R3_W_CF', predictedTeamId: 'okc', predictedSeriesLength: 7, predictedRound: 3, status: PickStatus.PENDING }
           ],
-          playInPicks: []
+          playInPicks: [],
+          roundScores: { playIn: 5, r1: 30, r2: 20, cf: 40, finals: 0 }
         }
       ];
       setEntries(mockEntries);
@@ -82,6 +140,15 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({ leagueId }) => {
       }
     });
 
+    // Catch results for scoring
+    const unsubResults = onSnapshot(collection(db, 'seriesResults'), (snap) => {
+      const resMap: Record<string, SeriesResult> = {};
+      snap.forEach(d => {
+        resMap[d.id] = { id: d.id, ...d.data() } as SeriesResult;
+      });
+      setSeriesResults(resMap);
+    });
+
     // Fetch teams for lookup
     const fetchTeams = async () => {
       const teamsSnap = await getDocs(collection(db, 'teams'));
@@ -98,6 +165,11 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({ leagueId }) => {
     const unsubLeague = onSnapshot(leagueRef, async (leagueSnap) => {
       if (!leagueSnap.exists()) return;
       const leagueData = leagueSnap.data() as League;
+      setLeagueConfig(leagueData);
+      
+      if (leagueData.lastCalculated) {
+        setLastUpdated((leagueData.lastCalculated as any).toDate());
+      }
       const participants = leagueData.participants || [];
 
       // Fetch all brackets for this league
@@ -121,8 +193,6 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({ leagueId }) => {
           chunks.push(participants.slice(i, i + 30));
         }
 
-        // For simplicity with multiple chunks, we'll use a combined listener approach
-        // though usually leagues are small (< 30).
         const usersQuery = query(collection(db, 'users'), where('uid', 'in', chunks[0]));
         unsubUsers = onSnapshot(usersQuery, (usersSnap) => {
           usersSnap.forEach(doc => {
@@ -133,6 +203,9 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({ leagueId }) => {
             }
             userMap[data.uid] = name;
           });
+
+          // Fetch results from ref if not ready yet
+          const resultsToUse = seriesResults;
 
           // Merge participants with their brackets (if any)
           const allEntries: LeaderboardEntry[] = participants.map(uid => {
@@ -145,7 +218,8 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({ leagueId }) => {
               playInPicks: bracket?.playInPicks || [],
               tiebreakerPrediction: bracket?.tiebreakerPrediction || 0,
               totalScore: bracket?.totalScore || 0,
-              userName: userMap[uid] || 'Unknown User'
+              userName: userMap[uid] || 'Unknown User',
+              roundScores: bracket ? calculateEntryRoundScores(bracket, resultsToUse, leagueData) : { playIn: 0, r1: 0, r2: 0, cf: 0, finals: 0 }
             };
           });
 
@@ -179,8 +253,9 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({ leagueId }) => {
     return () => {
       unsubSettings();
       unsubLeague();
+      unsubResults();
     };
-  }, [leagueId]);
+  }, [leagueId, seriesResults]);
 
   if (loading) {
     return (
@@ -246,9 +321,15 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({ leagueId }) => {
           <span className="w-8">Rank</span>
           <span>Participant</span>
         </div>
-        <div className="flex items-center gap-12">
-          <span className="w-16 text-center">Tiebreaker</span>
-          <span className="w-12 text-right">Score</span>
+        <div className="flex items-center gap-6">
+          <div className="grid grid-cols-5 gap-4 w-60 text-center">
+            <span>PI</span>
+            <span>R1</span>
+            <span>R2</span>
+            <span>CF</span>
+            <span>FIN</span>
+          </div>
+          <span className="w-12 text-right">Total</span>
         </div>
       </div>
 
@@ -265,7 +346,7 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({ leagueId }) => {
             <div 
               key={entry.id}
               onClick={() => navigate(`/league/${leagueId}/user/${entry.userId}`)}
-              className={`group relative flex items-center justify-between px-6 py-5 bg-white/60 backdrop-blur-xl border border-black/5 rounded-2xl transition-all duration-500 cursor-pointer hover:border-orange-500/50 hover:bg-black/5 ${
+              className={`group relative flex items-center justify-between px-6 py-4 bg-white/60 backdrop-blur-xl border border-black/5 rounded-2xl transition-all duration-500 cursor-pointer hover:border-orange-500/50 hover:bg-black/5 ${
                 rank === 1 ? 'bg-gradient-to-r from-orange-500/10 to-transparent border-orange-500/20' : ''
               }`}
             >
@@ -310,22 +391,29 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({ leagueId }) => {
                     <ChevronRight className="w-3 h-3 text-orange-500 opacity-0 group-hover:opacity-100 transition-all" />
                   </div>
                   {isLocked && (
-                    <div className="mt-1 flex items-center gap-2">
+                    <div className="mt-1 flex items-center gap-3">
                       {(() => {
                         const pred = getFinalsPrediction(entry);
                         if (!pred) return <span className="text-[9px] text-gray-400 font-bold uppercase tracking-tighter">No Finals Pick</span>;
                         return (
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-[9px] font-black text-orange-500 uppercase italic">
-                              {pred.winnerName}
-                            </span>
-                            <span className="text-[8px] font-bold text-gray-400 uppercase">over</span>
-                            <span className="text-[9px] font-bold text-gray-600 uppercase italic">
-                              {pred.loserName}
-                            </span>
-                            <span className="text-[8px] font-black text-gray-400 bg-black/5 px-1 rounded">
-                              IN {pred.games}
-                            </span>
+                          <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-[9px] font-black text-orange-500 uppercase italic">
+                                {pred.winnerName}
+                              </span>
+                              <span className="text-[8px] font-bold text-gray-400 uppercase">over</span>
+                              <span className="text-[9px] font-bold text-gray-600 uppercase italic">
+                                {pred.loserName}
+                              </span>
+                              <span className="text-[8px] font-black text-gray-100 bg-gray-900 px-1 rounded">
+                                IN {pred.games}
+                              </span>
+                            </div>
+                            <div className="h-2 w-px bg-gray-300" />
+                            <div className="flex items-center gap-1 text-[9px] font-mono font-bold text-gray-400">
+                              <span>{entry.tiebreakerPrediction}</span>
+                              <span className="text-[8px] text-gray-500 font-sans uppercase">PTS</span>
+                            </div>
                           </div>
                         );
                       })()}
@@ -334,17 +422,13 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({ leagueId }) => {
                 </div>
               </div>
 
-              <div className="flex items-center gap-12">
-                <div className="w-16 text-center">
-                  <span className="text-xs font-mono font-bold text-gray-400">
-                    {isLocked ? (
-                      <>
-                        {entry.tiebreakerPrediction} <span className="text-[8px] text-gray-600 uppercase">PTS</span>
-                      </>
-                    ) : (
-                      <span className="text-[10px] text-gray-600 uppercase italic">Hidden</span>
-                    )}
-                  </span>
+              <div className="flex items-center gap-6">
+                <div className="grid grid-cols-5 gap-4 w-60 text-center text-[11px] font-bold font-mono">
+                  <span className={entry.roundScores.playIn > 0 ? 'text-gray-900' : 'text-gray-300'}>{entry.roundScores.playIn}</span>
+                  <span className={entry.roundScores.r1 > 0 ? 'text-gray-900' : 'text-gray-300'}>{entry.roundScores.r1}</span>
+                  <span className={entry.roundScores.r2 > 0 ? 'text-gray-900' : 'text-gray-300'}>{entry.roundScores.r2}</span>
+                  <span className={entry.roundScores.cf > 0 ? 'text-gray-900' : 'text-gray-300'}>{entry.roundScores.cf}</span>
+                  <span className={entry.roundScores.finals > 0 ? 'text-gray-900' : 'text-gray-300'}>{entry.roundScores.finals}</span>
                 </div>
                 <div className="w-12 text-right">
                   <span className="text-xl font-black italic text-orange-500">
@@ -355,6 +439,21 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({ leagueId }) => {
             </div>
           );
         })
+      )}
+      
+      {lastUpdated && (
+        <div className="pt-8 pb-4 text-center">
+          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400 flex items-center justify-center gap-2">
+            <Clock className="w-3 h-3" />
+            Scores Last Updated: {lastUpdated.toLocaleString([], { 
+              month: 'short', 
+              day: 'numeric', 
+              hour: '2-digit', 
+              minute: '2-digit',
+              timeZoneName: 'short'
+            })}
+          </p>
+        </div>
       )}
     </div>
   );

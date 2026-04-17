@@ -5,12 +5,52 @@ import fs from 'node:fs';
 import cron from 'node-cron';
 import axios from 'axios';
 import admin from 'firebase-admin';
-import { initializeApp, getApps, getApp } from 'firebase-admin/app';
-import { getFirestore } from 'firebase-admin/firestore';
+import { initializeApp as initializeAdminApp, getApps as getAdminApps, getApp as getAdminApp } from 'firebase-admin/app';
+import { getFirestore as getAdminFirestore } from 'firebase-admin/firestore';
 import { fileURLToPath } from 'node:url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// ===============================================================
+// Firestore Error Handling (as per system instructions)
+// ===============================================================
+enum OperationType {
+  CREATE = 'create',
+  UPDATE = 'update',
+  DELETE = 'delete',
+  LIST = 'list',
+  GET = 'get',
+  WRITE = 'write',
+}
+
+function handleFirestoreError(error: any, operationType: OperationType, path: string | null) {
+  const isPermissionDenied = 
+    error.code === 7 || 
+    error.code === 'permission-denied' || 
+    error.message?.includes('permission-denied') || 
+    error.message?.includes('Missing or insufficient permissions') ||
+    error.message?.includes('PERMISSION_DENIED');
+
+  if (isPermissionDenied) {
+    const errInfo = {
+      error: error.message || String(error),
+      authInfo: {
+        userId: 'SERVER_ADMIN_SDK',
+        email: 'SERVER_ADMIN_SDK',
+        emailVerified: true,
+        isAnonymous: false,
+        tenantId: undefined,
+        providerInfo: []
+      },
+      operationType,
+      path
+    };
+    console.error('Firestore Permission Error: ', JSON.stringify(errInfo));
+    throw new Error(JSON.stringify(errInfo));
+  }
+  throw error;
+}
 
 // Load Firebase configuration robustly
 let firebaseConfig: any = null;
@@ -26,32 +66,26 @@ try {
   console.error('Error loading firebase-applet-config.json:', error);
 }
 
-// Initialize Firebase Admin SDK on the server
-let db: any = null;
+// Initialize Firebase Admin SDK
+let db: admin.firestore.Firestore | null = null;
 
 if (firebaseConfig) {
   try {
-    console.log('Initializing Firebase Admin SDK on server...');
-    console.log('Project ID:', firebaseConfig.projectId);
+    console.log(`Initializing Firebase Admin SDK for project ${firebaseConfig.projectId}...`);
     
-    let adminApp;
-    if (getApps().length === 0) {
-      adminApp = initializeApp({
-        projectId: firebaseConfig.projectId,
-      });
-    } else {
-      adminApp = getApp();
-    }
+    // Initialize App without explicit credential to let it use environment default more cleanly
+    const adminApp = getAdminApps().length === 0 
+      ? initializeAdminApp({
+          projectId: firebaseConfig.projectId,
+        })
+      : getAdminApp();
     
-    // Use the named database if provided
-    if (firebaseConfig.firestoreDatabaseId) {
-      db = getFirestore(adminApp, firebaseConfig.firestoreDatabaseId);
-    } else {
-      db = getFirestore(adminApp);
-    }
-    console.log('Firebase Admin SDK initialized successfully.');
+    // Explicitly pass the databaseId
+    db = getAdminFirestore(adminApp, firebaseConfig.firestoreDatabaseId);
+    
+    console.log(`Firebase Admin SDK initialized for Firestore (Project: ${firebaseConfig.projectId}, DB: ${firebaseConfig.firestoreDatabaseId || '(default)'}).`);
   } catch (error) {
-    console.error('Error initializing Firebase Admin:', error);
+    console.error('Error initializing Firebase Admin SDK:', error);
   }
 } else {
   console.error('Firebase config is missing, cannot initialize Admin SDK.');
@@ -59,147 +93,110 @@ if (firebaseConfig) {
 
 async function startServer() {
   const expressApp = express();
-  // Use the PORT environment variable if provided (required for Cloud Run), 
-  // otherwise default to 3000 (required for AI Studio Build environment).
   const PORT = Number(process.env.PORT) || 3000;
   
   console.log(`Starting server on port ${PORT}...`);
 
-  // API Routes
+  // Debug route
+  expressApp.get('/api/admin/debug-db', async (req, res) => {
+    try {
+      if (!db) throw new Error('DB not initialized');
+      const collections = ['leagues', 'teams', 'users', 'globalSettings'];
+      const stats: Record<string, number> = {};
+      for (const col of collections) {
+        const snap = await db.collection(col).get();
+        stats[col] = snap.size;
+      }
+      res.json({ status: 'success', databaseId: firebaseConfig?.firestoreDatabaseId, stats });
+    } catch (error) {
+      res.status(500).json({ status: 'error', message: String(error) });
+    }
+  });
+
   expressApp.get('/api/health', (req, res) => {
     res.json({ status: 'ok' });
   });
 
-  // Manual Trigger for Scoring (for testing)
-  expressApp.post('/api/calculate-scores', async (req, res) => {
-    try {
-      if (!db) {
-        const reason = !firebaseConfig ? 'Firebase config missing' : 'Admin SDK failed to initialize';
-        throw new Error(`Database not initialized. ${reason}`);
-      }
-      await recalculateAllLeagues(db);
-      res.json({ status: 'success', message: 'Scoring recalculation completed' });
-    } catch (error) {
-      console.error('Scoring error:', error);
-      res.status(500).json({ status: 'error', message: error instanceof Error ? error.message : String(error) });
-    }
-  });
-
-  // Manual Trigger for NBA Data Sync
-  expressApp.post('/api/sync-results', async (req, res) => {
-    try {
-      if (!db) {
-        const reason = !firebaseConfig ? 'Firebase config missing' : 'Admin SDK failed to initialize';
-        throw new Error(`Database not initialized. ${reason}`);
-      }
-      await syncNbaResults(db);
-      res.json({ status: 'success', message: 'NBA results sync completed' });
-    } catch (error) {
-      console.error('Sync error:', error);
-      res.status(500).json({ status: 'error', message: error instanceof Error ? error.message : String(error) });
-    }
-  });
-
-  // Manual Trigger for NBA Standings Sync
-  expressApp.post('/api/sync-standings', async (req, res) => {
-    try {
-      if (!db) {
-        const reason = !firebaseConfig ? 'Firebase config missing' : 'Admin SDK failed to initialize';
-        throw new Error(`Database not initialized. ${reason}`);
-      }
-      await syncNbaStandings(db);
-      res.json({ status: 'success', message: 'NBA standings sync completed' });
-    } catch (error) {
-      console.error('Standings Sync error:', error);
-      res.status(500).json({ status: 'error', message: error instanceof Error ? error.message : String(error) });
-    }
-  });
-
-  // Test API Connection
   expressApp.get('/api/admin/test-api-connection', async (req, res) => {
-    const apiKey = process.env.RAPIDAPI_KEY;
-    if (!apiKey) {
-      return res.status(400).json({ 
-        status: 'error', 
-        message: 'RAPIDAPI_KEY is missing from environment secrets.' 
-      });
-    }
-
     try {
-      const yesterday = new Date();
-      yesterday.setDate(yesterday.getDate() - 1);
-      const dateStr = yesterday.toISOString().split('T')[0].replace(/-/g, ''); // Format: YYYYMMDD
-
-      console.log(`Testing RapidAPI NBA Scoreboard for date: ${dateStr}`);
-
-      const response = await axios.get('https://nba-api-free-data.p.rapidapi.com/nba-scoreboard-by-date', {
-        params: { date: dateStr },
+      const apiKey = process.env.RAPIDAPI_KEY;
+      if (!apiKey) throw new Error('RAPIDAPI_KEY not found in environment');
+      
+      // Attempt to hit a simple endpoint to verify key/connectivity
+      const response = await axios.get('https://nba-api-free-data.p.rapidapi.com/nba-conference-standings', {
         headers: {
           'x-rapidapi-host': 'nba-api-free-data.p.rapidapi.com',
-          'x-rapidapi-key': process.env.RAPIDAPI_KEY || ''
+          'x-rapidapi-key': apiKey
         }
       });
-
-      res.json({
-        status: 'success',
-        message: `Successfully connected to RapidAPI. Found ${response.data?.response?.Events?.length || 0} games for ${dateStr}.`,
-        data: response.data
-      });
-    } catch (error) {
-      console.error('API Test Error:', error);
-      res.status(500).json({ 
-        status: 'error', 
-        message: 'Failed to connect to RapidAPI.',
-        details: error instanceof Error ? error.message : String(error)
-      });
+      
+      if (response.status === 200) {
+        res.json({ status: 'success', message: 'Successfully connected to RapidAPI NBA Service.' });
+      } else {
+        res.status(response.status).json({ status: 'error', message: `API responded with status ${response.status}` });
+      }
+    } catch (error: any) {
+      console.error('API Test Error:', error.message);
+      res.status(500).json({ status: 'error', message: error.message, details: error.response?.data });
     }
   });
 
-  // Seed initial data for testing
-  expressApp.post('/api/admin/seed-data', async (req, res) => {
+  expressApp.post('/api/calculate-scores', async (req, res) => {
     try {
       if (!db) throw new Error('Database not initialized');
-      const batch = db.batch();
-
-      // Seed Teams
-      const teams = [
-        { id: 'bos', teamName: 'Boston Celtics', conference: 'East', seed: 1, apiTeamId: 2 },
-        { id: 'mia', teamName: 'Miami Heat', conference: 'East', seed: 8, apiTeamId: 20 },
-        { id: 'okc', teamName: 'Oklahoma City Thunder', conference: 'West', seed: 1, apiTeamId: 25 },
-        { id: 'nop', teamName: 'New Orleans Pelicans', conference: 'West', seed: 8, apiTeamId: 3 },
-      ];
-
-      teams.forEach(team => {
-        const ref = db!.collection('teams').doc(team.id);
-        batch.set(ref, team);
-      });
-
-      // Seed Series Results (Round 1)
-      const series = [
-        { id: 'R1_E_1', round: 1, team1Id: 'bos', team2Id: 'mia', totalGamesPlayed: 0, lastDataChanged: admin.firestore.FieldValue.serverTimestamp() },
-        { id: 'R1_W_1', round: 1, team1Id: 'okc', team2Id: 'nop', totalGamesPlayed: 0, lastDataChanged: admin.firestore.FieldValue.serverTimestamp() },
-      ];
-
-      series.forEach(s => {
-        const ref = db!.collection('seriesResults').doc(s.id);
-        batch.set(ref, s);
-      });
-
-      // Seed Global Settings
-      const settingsRef = db.collection('globalSettings').doc('config');
-      batch.set(settingsRef, {
-        picksOpenTime: admin.firestore.Timestamp.fromDate(new Date('2024-04-01')),
-        picksLockTime: admin.firestore.Timestamp.fromDate(new Date('2024-04-20')),
-        lastDataChanged: admin.firestore.FieldValue.serverTimestamp()
-      });
-
-      await batch.commit();
-      res.json({ status: 'success', message: 'Initial data seeded successfully.' });
-    } catch (error) {
-      console.error('Seeding Error:', error);
-      res.status(500).json({ status: 'error', message: 'Failed to seed data.', details: error instanceof Error ? error.message : String(error) });
+      const force = req.query.force === 'true';
+      await recalculateAllLeagues(db, force);
+      res.json({ status: 'success', message: 'Scoring recalculation completed' });
+    } catch (error: any) {
+      res.status(500).json({ status: 'error', message: error.message });
     }
   });
+
+  // RapidAPI Proxy: Results
+  // Frontend calls this to get results without having the API key
+  expressApp.get('/api/proxy/nba-results', async (req, res) => {
+    try {
+      const date = req.query.date as string;
+      const results = await fetchNbaResultsData(db || undefined, date);
+      res.json({ status: 'success', games: results });
+    } catch (error: any) {
+      console.error('Proxy NBA Results Error:', error.message);
+      res.status(500).json({ status: 'error', message: error.message });
+    }
+  });
+
+  expressApp.get('/api/proxy/nba-standings', async (req, res) => {
+    try {
+      const updates = await fetchNbaStandingsData();
+      res.json({ status: 'success', updates });
+    } catch (error: any) {
+      console.error('Proxy NBA Standings Error:', error.message);
+      res.status(500).json({ status: 'error', message: error.message });
+    }
+  });
+
+  expressApp.post('/api/sync-results', async (req, res) => {
+    try {
+      if (!db) throw new Error('Database not initialized');
+      const isMock = req.query.mock === 'true';
+      await syncNbaResults(db, isMock);
+      res.json({ status: 'success', message: 'NBA results sync completed' });
+    } catch (error: any) {
+      res.status(500).json({ status: 'error', message: error.message });
+    }
+  });
+
+  expressApp.post('/api/sync-standings', async (req, res) => {
+    try {
+      if (!db) throw new Error('Database not initialized');
+      const isMock = req.query.mock === 'true';
+      await syncNbaStandings(db, isMock);
+      res.json({ status: 'success', message: 'NBA standings sync completed' });
+    } catch (error: any) {
+      res.status(500).json({ status: 'error', message: error.message });
+    }
+  });
+
   if (process.env.NODE_ENV !== 'production') {
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
@@ -215,359 +212,348 @@ async function startServer() {
     });
   }
 
-  console.log('Server routes initialized. Preparing to listen...');
-  
   expressApp.listen(PORT, '0.0.0.0', () => {
-    console.log(`SUCCESS: Server is now listening on 0.0.0.0:${PORT}`);
+    console.log(`Server running on port ${PORT}`);
   });
 }
 
 // ===============================================================
-// API-NBA Sync Job (5:00 AM ET -> 9:00 AM UTC)
+// Sync Workers & Helpers
 // ===============================================================
-cron.schedule('0 9 * * *', async () => {
-  console.log('Running API-NBA Sync Job...');
-  if (db) await syncNbaResults(db);
-});
 
-async function syncNbaStandings(db: admin.firestore.Firestore) {
-  try {
-    const apiKey = process.env.RAPIDAPI_KEY;
-    if (!apiKey) {
-      throw new Error('RAPIDAPI_KEY not found in environment secrets. Please add it in the Secrets panel.');
-    }
+async function fetchNbaStandingsData() {
+  const apiKey = process.env.RAPIDAPI_KEY;
+  if (!apiKey) throw new Error('RAPIDAPI_KEY not found');
 
-    console.log('Syncing NBA standings from RapidAPI (nba-api-free-data)...');
+  const endpoints = [
+    'https://nba-api-free-data.p.rapidapi.com/nba-conference-standings?year=2026',
+    'https://nba-api-free-data.p.rapidapi.com/nba-conference-standings?year=2025',
+    'https://nba-api-free-data.p.rapidapi.com/nba-conference-standings'
+  ];
 
-    const endpoints = [
-      'https://nba-api-free-data.p.rapidapi.com/nba-conference-standings?year=2026',
-      'https://nba-api-free-data.p.rapidapi.com/nba-conference-standings?year=2025',
-      'https://nba-api-free-data.p.rapidapi.com/nba-conference-standings'
-    ];
-
-    let response;
-    let lastError = null;
-    const errorLog: string[] = [];
-    for (const url of endpoints) {
-      try {
-        console.log(`Trying standings endpoint: ${url}`);
-        const host = 'nba-api-free-data.p.rapidapi.com';
-        
-        response = await axios.get(url, {
-          headers: {
-            'x-rapidapi-host': host,
-            'x-rapidapi-key': apiKey
-          }
-        });
-        
-        if (response.status === 200 && response.data?.status === 'success') {
-          break;
-        } else if (response.status === 200) {
-          const msg = response.data?.message || 'API returned 200 but status is not success';
-          errorLog.push(`${url}: 200 - ${msg}`);
-          response = null;
-          continue;
+  let response;
+  const errors: string[] = [];
+  for (const url of endpoints) {
+    try {
+      response = await axios.get(url, {
+        headers: {
+          'x-rapidapi-host': 'nba-api-free-data.p.rapidapi.com',
+          'x-rapidapi-key': apiKey
         }
-      } catch (err: any) {
-        lastError = err;
-        const status = err.response?.status || 'Unknown';
-        const message = err.message || 'No message';
-        errorLog.push(`${url}: ${status} - ${message}`);
-        console.warn(`Failed endpoint ${url}: ${status} - ${message}`);
-        continue;
-      }
-    }
-
-    if (!response) {
-      const summary = errorLog.join(' | ');
-      throw new Error(`All standings endpoints failed. Summary: ${summary}`);
-    }
-
-    // Handle the specific structure provided by the user
-    const normalizedGroups = response.data?.response?.standings || [];
-    
-    if (normalizedGroups.length === 0) {
-      console.log('No standings data found in API response. Full response data:', JSON.stringify(response.data));
-      return;
-    }
-
-    const updates: { ref: admin.firestore.DocumentReference, data: any }[] = [];
-
-    for (const group of normalizedGroups) {
-      const conference = group.name; // "Eastern Conference" or "Western Conference"
-      const shortConf = conference.includes('East') ? 'East' : 'West';
-      
-      const entries = group.standings?.entries || [];
-      
-      entries.forEach((entry: any, index: number) => {
-        const teamData = entry.team;
-        
-        // Extract seed from stats if available, otherwise use index + 1
-        let seed = index + 1;
-        if (Array.isArray(entry.stats)) {
-          const seedStat = entry.stats.find((s: any) => s.name === 'playoffSeed' || s.type === 'playoffseed');
-          if (seedStat && seedStat.value !== undefined) {
-            seed = Number(seedStat.value);
-          }
-        }
-
-        // Only process top 10 for our app's logic (or whatever limit we want)
-        if (seed > 10) return;
-        
-        // Use a consistent ID
-        const teamId = teamData.abbreviation?.toLowerCase() || String(teamData.id);
-        const ref = db.collection('teams').doc(teamId);
-        
-        updates.push({
-          ref,
-          data: {
-            teamName: teamData.displayName,
-            conference: shortConf,
-            seed: seed,
-            apiTeamId: Number(teamData.id),
-            logoUrl: teamData.logos?.[0]?.href || ''
-          }
-        });
       });
+      if (response.status === 200 && response.data?.status === 'success') break;
+    } catch (err: any) {
+      errors.push(`${url}: ${err.message}`);
+      response = null;
     }
-
-    // Commit in chunks of 500
-    for (let i = 0; i < updates.length; i += 500) {
-      const batch = db.batch();
-      const chunk = updates.slice(i, i + 500);
-      chunk.forEach(u => batch.set(u.ref, u.data, { merge: true }));
-      await batch.commit();
-    }
-
-    console.log('NBA standings sync completed. Teams updated.');
-  } catch (error) {
-    console.error('NBA Standings Sync Error:', error);
-    throw error;
   }
+
+  if (!response) throw new Error(`Standings API failed: ${errors.join(' | ')}`);
+
+  const groups = response.data?.response?.standings || [];
+  const updates: any[] = [];
+
+  for (const group of groups) {
+    const conference = group.name.includes('East') ? 'East' : 'West';
+    const entries = group.standings?.entries || [];
+    entries.forEach((entry: any, index: number) => {
+      const team = entry.team;
+      let seed = index + 1;
+      if (Array.isArray(entry.stats)) {
+        const seedStat = entry.stats.find((s: any) => s.name === 'playoffSeed' || s.type === 'playoffseed');
+        if (seedStat?.value !== undefined) seed = Number(seedStat.value);
+      }
+      if (seed > 10) return;
+      const id = team.abbreviation?.toLowerCase() || String(team.id);
+      updates.push({
+        id,
+        data: {
+          teamName: team.displayName,
+          conference,
+          seed,
+          apiTeamId: Number(team.id),
+          logoUrl: team.logos?.[0]?.href || ''
+        }
+      });
+    });
+  }
+  return updates;
 }
 
-async function syncNbaResults(db: admin.firestore.Firestore) {
+async function syncNbaStandings(db: admin.firestore.Firestore, isMock: boolean = false) {
+  if (isMock) return;
+  const updates = await fetchNbaStandingsData();
+  const batch = db.batch();
+  updates.forEach(u => batch.set(db.collection('teams').doc(u.id), u.data, { merge: true }));
+  await batch.commit();
+}
+
+async function fetchNbaResultsData(dbInstance?: admin.firestore.Firestore, specificDate?: string) {
+  const apiKey = process.env.RAPIDAPI_KEY;
+  if (!apiKey) throw new Error('RAPIDAPI_KEY not found');
+
+  let dateStr = specificDate;
+  if (!dateStr) {
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    dateStr = yesterday.toISOString().split('T')[0].replace(/-/g, '');
+  }
+
+  const response = await axios.get('https://nba-api-free-data.p.rapidapi.com/nba-scoreboard-by-date', {
+    params: { date: dateStr },
+    headers: {
+      'x-rapidapi-host': 'nba-api-free-data.p.rapidapi.com',
+      'x-rapidapi-key': apiKey
+    }
+  });
+
+  const rawGames = response.data?.response?.Events || 
+                   response.data?.response?.events || 
+                   response.data?.events || 
+                   response.data?.scoreboard?.events || [];
+  
+  if (rawGames.length === 0) {
+    console.warn(`No games found in API response for date ${dateStr}. Top-level keys:`, Object.keys(response.data || {}));
+  }
+
+  const completed = rawGames.filter((g: any) => {
+    // Check nested status.type.completed as per user sample
+    const isCompleted = g.status?.type?.completed === true;
+    const statusName = g.status?.type?.name || '';
+    
+    return isCompleted || 
+           statusName.includes('FINAL') || 
+           statusName.includes('COMPLETED') ||
+           g.status?.type?.state === 'post';
+  });
+  
+  if (rawGames.length > 0 && completed.length === 0) {
+    console.warn(`Found ${rawGames.length} games for ${dateStr}, but none matched the 'completed' filter. Sample statuses:`, 
+      rawGames.slice(0, 3).map((g: any) => g.status?.type?.name));
+  }
+
+  if (completed.length === 0) return [];
+
+  // If no DB provided or if DB read fails (common on server IAM), return raw data for frontend to handle
+  if (!dbInstance) {
+    return completed;
+  }
+
   try {
-    const apiKey = process.env.RAPIDAPI_KEY;
-    if (!apiKey) {
-      throw new Error('RAPIDAPI_KEY not found in environment secrets. Please add it in the Secrets panel.');
-    }
-
-    console.log('Syncing NBA results from RapidAPI...');
-
-    let response;
-    const endpoints = [
-      'https://nba-api-free-data.p.rapidapi.com/nba-game-scores'
-    ];
-
-    for (const url of endpoints) {
-      try {
-        console.log(`Trying results endpoint: ${url}`);
-        const host = 'nba-api-free-data.p.rapidapi.com';
-        
-        response = await axios.get(url, {
-          headers: {
-            'x-rapidapi-host': host,
-            'x-rapidapi-key': apiKey
-          }
-        });
-        if (response.status === 200) break;
-      } catch (err: any) {
-        console.warn(`Failed results endpoint ${url}: ${err.response?.status || 'Unknown'}`);
-        continue;
-      }
-    }
-
-    if (!response) {
-      console.log('All results endpoints failed.');
-      return;
-    }
-
-    // The nba-api-free-data structure for game scores usually has an 'events' array
-    let games = [];
-    if (response.data?.events) {
-      games = response.data.events;
-    } else if (response.data?.response?.events) {
-      games = response.data.response.events;
-    }
-
-    const completedGames = games.filter((g: any) => g.status?.type?.completed === true);
-
-    if (completedGames.length === 0) {
-      console.log('No completed games found in API response.');
-      return;
-    }
-
-    // Fetch all teams to map apiTeamId to our teamId
-    const teamsSnapshot = await db.collection('teams').get();
+    const teamsSnap = await dbInstance.collection('teams').get();
     const teamsMap: Record<string, string> = {};
-    teamsSnapshot.docs.forEach(d => {
-      const data = d.data();
-      if (data.apiTeamId) {
-        teamsMap[String(data.apiTeamId)] = d.id;
-      }
+    teamsSnap.docs.forEach(d => {
+      if (d.data().apiTeamId) teamsMap[String(d.data().apiTeamId)] = d.id;
     });
 
-    // Fetch all series results
-    const seriesSnapshot = await db.collection('seriesResults').get();
-    const seriesList = seriesSnapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+    const seriesSnap = await dbInstance.collection('seriesResults').get();
+    const seriesList = seriesSnap.docs.map(d => ({ id: d.id, ...d.data() } as any));
 
-    const seriesUpdates: admin.firestore.DocumentReference[] = [];
-
-    for (const game of completedGames) {
-      const competitors = game.competitors || [];
-      const winner = competitors.find((c: any) => c.winner === true);
-      const loser = competitors.find((c: any) => c.winner === false);
-
+    const results: any[] = [];
+    for (const game of completed) {
+      // Handle competitions as both Object (user sample) and Array (standard)
+      const comp = Array.isArray(game.competitions) ? game.competitions[0] : (game.competitions || game);
+      const comps = comp.competitors || [];
+      
+      const winner = comps.find((c: any) => 
+        c.winner === true || 
+        (c.score && Number(c.score) > Number(comps.find((o: any) => String(o.id) !== String(c.id))?.score))
+      );
+      const loser = comps.find((c: any) => 
+        c.winner === false || 
+        (c.score && Number(c.score) < Number(comps.find((o: any) => String(o.id) !== String(c.id))?.score))
+      );
+      
       if (!winner || !loser) continue;
 
-      const winningTeamId = teamsMap[String(winner.id)];
-      const losingTeamId = teamsMap[String(loser.id)];
+      const winId = teamsMap[String(winner.id || winner.team?.id)];
+      const loseId = teamsMap[String(loser.id || loser.team?.id)];
+      if (!winId || !loseId) continue;
 
-      if (!winningTeamId || !losingTeamId) continue;
-
-      // Find the series involving these two teams
       const series = seriesList.find((s: any) => 
-        (s.team1Id === winningTeamId && s.team2Id === losingTeamId) ||
-        (s.team1Id === losingTeamId && s.team2Id === winningTeamId)
+        (s.team1Id === winId && s.team2Id === loseId) || (s.team1Id === loseId && s.team2Id === winId)
       );
-
       if (series) {
-        console.log(`Updating series: ${series.id} with game result.`);
-        seriesUpdates.push(db.collection('seriesResults').doc(series.id));
+        results.push({ seriesId: series.id, winnerId: winId, totalGames: 4 });
       }
     }
-
-    if (seriesUpdates.length > 0) {
-      for (let i = 0; i < seriesUpdates.length; i += 500) {
-        const batch = db.batch();
-        const chunk = seriesUpdates.slice(i, i + 500);
-        chunk.forEach(ref => batch.update(ref, { lastDataChanged: admin.firestore.FieldValue.serverTimestamp() }));
-        await batch.commit();
-      }
-      
-      // Update global settings to trigger scoring engine
-      await db.collection('globalSettings').doc('config').update({
-        lastDataChanged: admin.firestore.FieldValue.serverTimestamp()
-      });
-      console.log('NBA results sync completed and triggered scoring engine.');
+    return results;
+  } catch (err: any) {
+    if (err.code === 7 || err.message?.includes('PERMISSION_DENIED')) {
+      console.log('Server Admin SDK has restricted database access (IAM). Handing off game mapping to frontend client.');
     } else {
-      console.log('NBA results sync completed. No relevant series data changed.');
+      console.error('Server-side Firestore mapping error:', err.message);
     }
-  } catch (error) {
-    console.error('API-NBA Sync Error:', error);
+    return completed;
   }
 }
 
-// ===============================================================
-// Idempotent Multi-Tenant Scoring Engine
-// ===============================================================
-async function recalculateAllLeagues(db: admin.firestore.Firestore) {
-  const globalConfigSnap = await db.collection('globalSettings').doc('config').get();
-  const globalConfig = globalConfigSnap.data();
-  if (!globalConfig) return;
-
-  const lastDataChanged = globalConfig.lastDataChanged?.toDate() || new Date(0);
-
-  const leaguesSnap = await db.collection('leagues').get();
+async function syncNbaResults(db: admin.firestore.Firestore, isMock: boolean = false) {
+  if (isMock) {
+    await db.collection('globalSettings').doc('config').update({ lastDataChanged: admin.firestore.FieldValue.serverTimestamp() });
+    return;
+  }
   
+  console.log('Background Sync: Fetching results...');
+  const results = await fetchNbaResultsData(db);
+  if (results.length === 0) {
+    console.log('Background Sync: No new results found.');
+    return;
+  }
+  
+  // If results is the raw array of events (mapping failed on server), we can't do an auto-sync batch here reliably
+  if (results[0] && !results[0].seriesId) {
+    console.warn('Background sync: Received raw games but missing IDs. Skipping auto-update.');
+    return;
+  }
+
+  const batch = db.batch();
+  results.forEach(res => {
+    batch.update(db.collection('seriesResults').doc(res.seriesId), {
+      advancingTeamId: res.winnerId,
+      lastDataChanged: admin.firestore.FieldValue.serverTimestamp()
+    });
+  });
+  
+  batch.update(db.collection('globalSettings').doc('config'), { lastDataChanged: admin.firestore.FieldValue.serverTimestamp() });
+  await batch.commit();
+  console.log(`Background Sync: Updated ${results.length} series.`);
+}
+
+async function recalculateBracketProgression(db: admin.firestore.Firestore) {
+  console.log("Server: Recalculating bracket progression...");
+  try {
+    const seriesSnap = await db.collection('seriesResults').get();
+    const allSeries = seriesSnap.docs.map(d => ({ id: d.id, ...d.data() } as any));
+    const batch = db.batch();
+    let updatesCount = 0;
+
+    const updateSeries = (id: string, t1?: string, t2?: string) => {
+      const s = allSeries.find(x => x.id === id);
+      if (!s) return;
+      const updates: any = {};
+      
+      // Only update if value is provided AND different
+      if (t1 !== undefined && t1 !== '' && s.team1Id !== t1) updates.team1Id = t1;
+      if (t2 !== undefined && t2 !== '' && s.team2Id !== t2) updates.team2Id = t2;
+      
+      if (Object.keys(updates).length > 0) {
+        batch.update(db.collection('seriesResults').doc(id), { 
+          ...updates, 
+          lastDataChanged: admin.firestore.FieldValue.serverTimestamp() 
+        });
+        updatesCount++;
+      }
+    };
+
+    const getWinner = (id: string) => allSeries.find(s => s.id === id)?.advancingTeamId || '';
+    const getLoser = (id: string) => {
+      const s = allSeries.find(s => s.id === id);
+      if (!s || !s.advancingTeamId || !s.team1Id || !s.team2Id) return '';
+      return s.advancingTeamId === s.team1Id ? s.team2Id : s.team1Id;
+    };
+
+    // --- East ---
+    updateSeries('R1_E_2v7', undefined, getWinner('PI_E_A'));
+    updateSeries('PI_E_C', getLoser('PI_E_A'), getWinner('PI_E_B'));
+    updateSeries('R1_E_1v8', undefined, getWinner('PI_E_C'));
+
+    // --- West ---
+    updateSeries('R1_W_2v7', undefined, getWinner('PI_W_A'));
+    updateSeries('PI_W_C', getLoser('PI_W_A'), getWinner('PI_W_B'));
+    updateSeries('R1_W_1v8', undefined, getWinner('PI_W_C'));
+
+    // --- R1 to R2 ---
+    updateSeries('R2_E_M1', getWinner('R1_E_1v8'), getWinner('R1_E_4v5'));
+    updateSeries('R2_E_M2', getWinner('R1_E_2v7'), getWinner('R1_E_3v6'));
+    updateSeries('R2_W_M1', getWinner('R1_W_1v8'), getWinner('R1_W_4v5'));
+    updateSeries('R2_W_M2', getWinner('R1_W_2v7'), getWinner('R1_W_3v6'));
+
+    // --- R2 to CF ---
+    updateSeries('R3_E_CF', getWinner('R2_E_M1'), getWinner('R2_E_M2'));
+    updateSeries('R3_W_CF', getWinner('R2_W_M1'), getWinner('R2_W_M2'));
+
+    // --- Finals ---
+    updateSeries('R4_Finals', getWinner('R3_E_CF'), getWinner('R3_W_CF'));
+
+    if (updatesCount > 0) {
+      await batch.commit();
+      console.log(`Server: Progression recalculated (${updatesCount} series updated).`);
+    } else {
+      console.log("Server: No progression updates needed.");
+    }
+  } catch (err) {
+    console.error("Server Progression Error:", err);
+  }
+}
+
+async function recalculateAllLeagues(db: admin.firestore.Firestore, force: boolean = false) {
+  const configSnap = await db.collection('globalSettings').doc('config').get();
+  const lastDataChanged = configSnap.data()?.lastDataChanged?.toDate() || new Date(0);
+  const leaguesSnap = await db.collection('leagues').get();
   for (const leagueDoc of leaguesSnap.docs) {
     const leagueData = leagueDoc.data();
-    const lastCalculated = leagueData.lastCalculated?.toDate() || new Date(0);
-
-    // Only recalculate if data changed since last calculation
-    if (lastDataChanged > lastCalculated) {
-      console.log(`Recalculating scores for league: ${leagueData.leagueName}`);
+    const lastCalc = leagueData.lastCalculated?.toDate() || new Date(0);
+    if (force || lastDataChanged > lastCalc) {
       await calculateLeagueScores(db, leagueDoc.id, leagueData);
     }
   }
 }
 
 async function calculateLeagueScores(db: admin.firestore.Firestore, leagueId: string, leagueData: any) {
-  const seriesResultsSnap = await db.collection('seriesResults').get();
-  const results = seriesResultsSnap.docs.map(d => ({ id: d.id, ...d.data() } as any));
+  const seriesResults = (await db.collection('seriesResults').get()).docs.map(d => ({ id: d.id, ...d.data() } as any));
+  const brackets = (await db.collection('brackets').where('leagueId', '==', leagueId).get()).docs;
+  const scores: { id: string, score: number, tiebreakerDiff: number }[] = [];
 
-  const bracketsSnap = await db.collection('brackets').where('leagueId', '==', leagueId).get();
-
-  const bracketScores: { id: string, score: number, tiebreakerDiff: number, tiebreakerValue: number }[] = [];
-
-  for (const bracketDoc of bracketsSnap.docs) {
-    const bracket = bracketDoc.data();
-    let totalScore = 0;
-
-    // 1. Standard Rounds Scoring
-    bracket.picks.forEach((pick: any) => {
-      const result = results.find(r => r.id === pick.matchupId); // Assuming matchupId mapping
-      if (result && result.advancingTeamId === pick.predictedTeamId) {
-        const basePoints = leagueData.pointConfig[`round${pick.predictedRound}`] || 0;
-        totalScore += basePoints;
-
-        // Bonus for exact games
-        if (result.totalGamesPlayed === pick.predictedSeriesLength) {
-          totalScore += leagueData.pointConfig.exactGamesBonus;
+  for (const doc of brackets) {
+    const b = doc.data();
+    let s = 0;
+    if (leagueData.pointConfig && Array.isArray(b.picks)) {
+      b.picks.forEach((p: any) => {
+        const res = seriesResults.find(r => r.id === p.matchupId);
+        if (res?.advancingTeamId === p.predictedTeamId) {
+          s += (leagueData.pointConfig[`round${p.predictedRound}`] || 0);
+          if (res.totalGamesPlayed === p.predictedSeriesLength) s += (leagueData.pointConfig.exactGamesBonus || 0);
         }
-      }
-    });
+      });
+    }
 
-    // 2. Play-In Scoring
-    bracket.playInPicks.forEach((pick: any) => {
-      const result = results.find(r => r.id === pick.matchupId);
-      if (result && result.advancingTeamId === pick.predictedWinnerId) {
-        totalScore += leagueData.pointConfig.playIn;
-      }
-    });
-
-    // Tiebreaker calculation
-    const actualFinalsPoints = results.find(r => r.round === 4)?.actualFinalsTotalPoints || 0;
-    const tiebreakerDiff = Math.abs(bracket.tiebreakerPrediction - actualFinalsPoints);
-
-    bracketScores.push({
-      id: bracketDoc.id,
-      score: totalScore,
-      tiebreakerDiff,
-      tiebreakerValue: bracket.tiebreakerPrediction
-    });
+    // Add Play-In scoring
+    if (leagueData.pointConfig?.playIn && Array.isArray(b.playInPicks)) {
+      b.playInPicks.forEach((p: any) => {
+        const res = seriesResults.find(r => r.id === p.matchupId);
+        if (res?.advancingTeamId === p.predictedWinnerId) {
+          s += (leagueData.pointConfig.playIn || 0);
+        }
+      });
+    }
+    const actualPoints = seriesResults.find(r => r.round === 4)?.actualFinalsTotalPoints || 0;
+    scores.push({ id: doc.id, score: s, tiebreakerDiff: Math.abs(b.tiebreakerPrediction - actualPoints) });
   }
 
-  // 3. Rank Brackets with Tiebreaker Logic
-  // Sort by Score (Desc), then Tiebreaker Diff (Asc), then "Price is Right" (Under wins)
-  bracketScores.sort((a, b) => {
-    if (b.score !== a.score) return b.score - a.score;
-    if (a.tiebreakerDiff !== b.tiebreakerDiff) return a.tiebreakerDiff - b.tiebreakerDiff;
-    
-    // Secondary Tiebreaker: Prediction under the actual total wins
-    const actualFinalsPoints = results.find(r => r.round === 4)?.actualFinalsTotalPoints || 0;
-    const aIsUnder = a.tiebreakerValue <= actualFinalsPoints;
-    const bIsUnder = b.tiebreakerValue <= actualFinalsPoints;
-    if (aIsUnder && !bIsUnder) return -1;
-    if (!aIsUnder && bIsUnder) return 1;
-    
-    return 0; // Deadlock
-  });
-
-  // Update Brackets in Chunks
-  for (let i = 0; i < bracketScores.length; i += 500) {
+  scores.sort((a, b) => (b.score - a.score) || (a.tiebreakerDiff - b.tiebreakerDiff));
+  
+  for (let i = 0; i < scores.length; i += 500) {
     const batch = db.batch();
-    const chunk = bracketScores.slice(i, i + 500);
-    chunk.forEach((item, indexInChunk) => {
-      const globalIndex = i + indexInChunk;
-      const ref = db.collection('brackets').doc(item.id);
-      batch.update(ref, {
-        totalScore: item.score,
-        rank: globalIndex + 1
-      });
+    scores.slice(i, i + 500).forEach((item, idx) => {
+      batch.update(db.collection('brackets').doc(item.id), { totalScore: item.score, rank: i + idx + 1 });
     });
     await batch.commit();
   }
-
-  // Update League LastCalculated
-  await db.collection('leagues').doc(leagueId).update({
-    lastCalculated: admin.firestore.FieldValue.serverTimestamp()
-  });
+  await db.collection('leagues').doc(leagueId).update({ lastCalculated: admin.firestore.FieldValue.serverTimestamp() });
 }
 
-console.log('Calling startServer()...');
-startServer().catch(err => {
-  console.error('FATAL: Failed to start server:', err);
-  process.exit(1);
+cron.schedule('0 9 * * *', async () => {
+  if (db) {
+    try {
+      await syncNbaResults(db);
+      await recalculateBracketProgression(db);
+      await recalculateAllLeagues(db, true); // Force recalc after results
+      console.log('Daily automated sync and scoring completed.');
+    } catch (err) {
+      console.error('Daily automated sync failed:', err);
+    }
+  }
 });
+
+startServer().catch(console.error);

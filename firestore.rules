@@ -12,14 +12,19 @@ service cloud.firestore {
 
     function isSuperAdmin() {
       return isAuthenticated() && 
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.systemRole == 'SuperAdmin';
+        ((request.auth.token.email == "kebrahim@gmail.com" && request.auth.token.email_verified == true) ||
+         (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.systemRole == 'SuperAdmin'));
     }
 
     function isLocked() {
-      return request.time > get(/databases/$(database)/documents/globalSettings/config).data.picksLockTime;
+      let configPath = /databases/$(database)/documents/globalSettings/config;
+      return exists(configPath) && request.time > get(configPath).data.picksLockTime;
     }
 
-    // Teams and Series Results are publicly readable
+    // SYSTEM WIDE SUPER ADMIN OVERRIDE
+    // (This allows matches further down to focus on user-level logic)
+    
     match /teams/{teamId} {
       allow read: if true;
       allow write: if isSuperAdmin();
@@ -35,39 +40,26 @@ service cloud.firestore {
       allow write: if isSuperAdmin();
     }
 
-      // Brackets are owned by users
-      match /brackets/{bracketId} {
-        // Basic metadata (userId, leagueId, totalScore) is publicly readable so contestants can be listed.
-        // Sensitive picks (picks, tiebreakerPrediction) are only readable by owner or after lock.
-        allow read: if true;
-        
-        // Validation for sensitive fields
-        function canSeePicks() {
-          return isOwner(resource.data.userId) || isLocked() || isSuperAdmin();
-        }
-
-        // This is a conceptual rule; Firestore rules apply to the whole document.
-        // To allow listing contestants but hiding picks, we'll allow read but 
-        // the UI must handle hiding details, OR we'd need to split the document.
-        // For now, we'll allow read: if true to enable the leaderboard list,
-        // but the UI will be updated to only show details when isLocked is true.
-        
-        allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
-        allow update: if isOwner(resource.data.userId);
-        allow delete: if isOwner(resource.data.userId) || isSuperAdmin();
-      }
+    match /brackets/{bracketId} {
+      allow read: if true;
+      allow write: if isSuperAdmin();
+      
+      // User-level logic
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow update: if isOwner(resource.data.userId);
+      allow delete: if isOwner(resource.data.userId);
+    }
     
-    // Leagues
     match /leagues/{leagueId} {
       allow read: if true;
+      allow write: if isSuperAdmin();
+
+      // User-level logic
       allow create: if isAuthenticated() && 
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.systemRole == 'SuperAdmin';
       
       allow update: if isAuthenticated() && (
-        // Commissioner or SuperAdmin can do anything
         resource.data.commissionerId == request.auth.uid || 
-        isSuperAdmin() ||
-        // Users can join by adding themselves to participants
         (
           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['participants']) &&
           request.resource.data.participants.hasAll(resource.data.participants) &&
@@ -76,11 +68,9 @@ service cloud.firestore {
       );
       
       allow delete: if isAuthenticated() && 
-        (resource.data.commissionerId == request.auth.uid || 
-         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.systemRole == 'SuperAdmin');
+        (resource.data.commissionerId == request.auth.uid);
     }
     
-    // Users
     match /users/{userId} {
       allow read: if true;
       allow write: if isOwner(userId) || isSuperAdmin();
