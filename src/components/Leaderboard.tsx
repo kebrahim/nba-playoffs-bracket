@@ -210,6 +210,11 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({ leagueId }) => {
           // Merge participants with their brackets (if any)
           const allEntries: LeaderboardEntry[] = participants.map(uid => {
             const bracket = bracketsMap[uid];
+            const roundScores = bracket ? calculateEntryRoundScores(bracket, resultsToUse, leagueData) : { playIn: 0, r1: 0, r2: 0, cf: 0, finals: 0 };
+            
+            // Calculate total score client-side for "Live" experience
+            const totalScore = roundScores.playIn + roundScores.r1 + roundScores.r2 + roundScores.cf + roundScores.finals;
+
             return {
               id: bracket?.id || `temp_${uid}`,
               userId: uid,
@@ -217,9 +222,9 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({ leagueId }) => {
               picks: bracket?.picks || [],
               playInPicks: bracket?.playInPicks || [],
               tiebreakerPrediction: bracket?.tiebreakerPrediction || 0,
-              totalScore: bracket?.totalScore || 0,
+              totalScore,
               userName: userMap[uid] || 'Unknown User',
-              roundScores: bracket ? calculateEntryRoundScores(bracket, resultsToUse, leagueData) : { playIn: 0, r1: 0, r2: 0, cf: 0, finals: 0 }
+              roundScores
             };
           });
 

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../firebase';
 import { collection, doc, getDocs, getDoc, setDoc, updateDoc, query, orderBy, writeBatch, deleteDoc, Timestamp, where, onSnapshot, serverTimestamp } from 'firebase/firestore';
-import { Team, Conference, GlobalSettings, SeriesResult } from '../types/database';
+import { Team, Conference, GlobalSettings, SeriesResult, PickStatus } from '../types/database';
 import { Shield, Users, Calendar, Trophy, Save, AlertTriangle, Plus, Trash2, Eye, Pencil } from 'lucide-react';
 
 export const SuperAdminDash: React.FC = () => {
@@ -362,65 +362,84 @@ export const SuperAdminDash: React.FC = () => {
       const seriesResultsSnap = await getDocs(collection(db, 'seriesResults'));
       const seriesResults = seriesResultsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
 
-      for (const leagueDoc of leaguesSnap.docs) {
-        const leagueId = leagueDoc.id;
-        const leagueData = leagueDoc.data();
-        console.log(`- Calculating scores for league: ${leagueData.name || leagueId}`);
-        
-        const bracketsQuery = query(collection(db, 'brackets'), where('leagueId', '==', leagueId));
-        const bracketsSnap = await getDocs(bracketsQuery);
-        
-        const scores: { id: string, score: number, tiebreakerDiff: number }[] = [];
-        
-        for (const bDoc of bracketsSnap.docs) {
-          const b = bDoc.data();
-          let s = 0;
+        for (const leagueDoc of leaguesSnap.docs) {
+          const leagueId = leagueDoc.id;
+          const leagueData = leagueDoc.data();
+          console.log(`- Calculating scores for league: ${leagueData.name || leagueId}`);
           
-          // Round 1-4 Picks
-          if (leagueData.pointConfig && Array.isArray(b.picks)) {
-            b.picks.forEach((p: any) => {
-              const res = seriesResults.find((r: any) => r.id === p.matchupId) as any;
-              if (res?.advancingTeamId === p.predictedTeamId) {
-                s += (leagueData.pointConfig[`round${p.predictedRound}`] || 0);
-                if (res.totalGamesPlayed === p.predictedSeriesLength) {
-                  s += (leagueData.pointConfig.exactGamesBonus || 0);
+          const bracketsQuery = query(collection(db, 'brackets'), where('leagueId', '==', leagueId));
+          const bracketsSnap = await getDocs(bracketsQuery);
+          
+          const scores: { id: string, score: number, tiebreakerDiff: number, updatedPicks: any[], updatedPlayInPicks: any[] }[] = [];
+          
+          for (const bDoc of bracketsSnap.docs) {
+            const b = bDoc.data();
+            let s = 0;
+            const updatedPicks = Array.isArray(b.picks) ? [...b.picks] : [];
+            const updatedPlayInPicks = Array.isArray(b.playInPicks) ? [...b.playInPicks] : [];
+
+            if (leagueData.pointConfig) {
+              updatedPicks.forEach((p: any) => {
+                const res = seriesResults.find((r: any) => r.id === p.matchupId) as any;
+                if (res?.advancingTeamId) {
+                  if (res.advancingTeamId === p.predictedTeamId) {
+                    p.status = PickStatus.CORRECT;
+                    s += (leagueData.pointConfig[`round${p.predictedRound}`] || 0);
+                    if (res.totalGamesPlayed === p.predictedSeriesLength) {
+                      s += (leagueData.pointConfig.exactGamesBonus || 0);
+                    }
+                  } else {
+                    p.status = PickStatus.INCORRECT;
+                  }
+                } else {
+                  p.status = PickStatus.PENDING;
                 }
+              });
+
+              // Play-In Picks
+              if (leagueData.pointConfig?.playIn) {
+                updatedPlayInPicks.forEach((p: any) => {
+                  const res = seriesResults.find((r: any) => r.id === p.matchupId) as any;
+                  if (res?.advancingTeamId) {
+                    if (res.advancingTeamId === p.predictedWinnerId) {
+                      p.status = PickStatus.CORRECT;
+                      s += (leagueData.pointConfig.playIn || 0);
+                    } else {
+                      p.status = PickStatus.INCORRECT;
+                    }
+                  } else {
+                    p.status = PickStatus.PENDING;
+                  }
+                });
               }
+            }
+
+            const actualFinalsPoints = (seriesResults.find((r: any) => r.round === 4) as any)?.actualFinalsTotalPoints || 0;
+            scores.push({ 
+              id: bDoc.id, 
+              score: s, 
+              tiebreakerDiff: Math.abs((b.tiebreakerPrediction || 0) - actualFinalsPoints),
+              updatedPicks,
+              updatedPlayInPicks
             });
           }
 
-          // Play-In Picks
-          if (leagueData.pointConfig?.playIn && Array.isArray(b.playInPicks)) {
-            b.playInPicks.forEach((p: any) => {
-              const res = seriesResults.find((r: any) => r.id === p.matchupId) as any;
-              if (res?.advancingTeamId === p.predictedWinnerId) {
-                s += (leagueData.pointConfig.playIn || 0);
-              }
+          // Sort by score then tiebreaker
+          scores.sort((a, b) => (b.score - a.score) || (a.tiebreakerDiff - b.tiebreakerDiff));
+
+          // Batch update results in chunks of 50
+          for (let i = 0; i < scores.length; i += 50) {
+            const scoreBatch = writeBatch(db);
+            scores.slice(i, i + 50).forEach((item, idx) => {
+              scoreBatch.update(doc(db, 'brackets', item.id), { 
+                totalScore: item.score, 
+                rank: i + idx + 1,
+                picks: item.updatedPicks,
+                playInPicks: item.updatedPlayInPicks
+              });
             });
+            await scoreBatch.commit();
           }
-
-          const actualFinalsPoints = (seriesResults.find((r: any) => r.round === 4) as any)?.actualFinalsTotalPoints || 0;
-          scores.push({ 
-            id: bDoc.id, 
-            score: s, 
-            tiebreakerDiff: Math.abs((b.tiebreakerPrediction || 0) - actualFinalsPoints) 
-          });
-        }
-
-        // Sort by score then tiebreaker
-        scores.sort((a, b) => (b.score - a.score) || (a.tiebreakerDiff - b.tiebreakerDiff));
-
-        // Batch update results in chunks of 50
-        for (let i = 0; i < scores.length; i += 50) {
-          const scoreBatch = writeBatch(db);
-          scores.slice(i, i + 50).forEach((item, idx) => {
-            scoreBatch.update(doc(db, 'brackets', item.id), { 
-              totalScore: item.score, 
-              rank: i + idx + 1 
-            });
-          });
-          await scoreBatch.commit();
-        }
         
         await updateDoc(doc(db, 'leagues', leagueId), { 
           lastCalculated: serverTimestamp() 

@@ -24,9 +24,19 @@ export const MatchupCard: React.FC<MatchupCardProps> = ({
   onPick,
   isLocked
 }) => {
+  const getDerivedStatus = () => {
+    if (!userPick) return PickStatus.PENDING;
+    if (!actualResult?.advancingTeamId) return PickStatus.PENDING;
+
+    const pickedId = userPick.predictedTeamId || userPick.predictedWinnerId;
+    if (actualResult.advancingTeamId === pickedId) return PickStatus.CORRECT;
+    return PickStatus.INCORRECT;
+  };
+
   const getStatusIcon = () => {
-    if (!userPick || userPick.status === PickStatus.PENDING) return <MinusCircle className="w-4 h-4 text-gray-500" />;
-    if (userPick.status === PickStatus.CORRECT) return <CheckCircle2 className="w-4 h-4 text-green-500" />;
+    const status = getDerivedStatus();
+    if (status === PickStatus.PENDING) return <MinusCircle className="w-4 h-4 text-gray-500" />;
+    if (status === PickStatus.CORRECT) return <CheckCircle2 className="w-4 h-4 text-green-500" />;
     return <XCircle className="w-4 h-4 text-red-500" />;
   };
 
@@ -87,7 +97,7 @@ export const MatchupCard: React.FC<MatchupCardProps> = ({
             <div className="flex items-center gap-1.5">
               {getStatusIcon()}
               <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500">
-                {userPick?.status || 'Pending'}
+                {getDerivedStatus()}
               </span>
             </div>
             {userPick && !isLocked && !matchupId.startsWith('PI_') && (

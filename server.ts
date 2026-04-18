@@ -24,6 +24,12 @@ enum OperationType {
   WRITE = 'write',
 }
 
+enum PickStatus {
+  PENDING = 'Pending',
+  CORRECT = 'Correct',
+  INCORRECT = 'Incorrect',
+}
+
 function handleFirestoreError(error: any, operationType: OperationType, path: string | null) {
   const isPermissionDenied = 
     error.code === 7 || 
@@ -503,32 +509,56 @@ async function recalculateAllLeagues(db: admin.firestore.Firestore, force: boole
 async function calculateLeagueScores(db: admin.firestore.Firestore, leagueId: string, leagueData: any) {
   const seriesResults = (await db.collection('seriesResults').get()).docs.map(d => ({ id: d.id, ...d.data() } as any));
   const brackets = (await db.collection('brackets').where('leagueId', '==', leagueId).get()).docs;
-  const scores: { id: string, score: number, tiebreakerDiff: number }[] = [];
+  const scores: { id: string, score: number, tiebreakerDiff: number, updatedPicks: any[], updatedPlayInPicks: any[] }[] = [];
 
   for (const doc of brackets) {
     const b = doc.data();
     let s = 0;
-    if (leagueData.pointConfig && Array.isArray(b.picks)) {
-      b.picks.forEach((p: any) => {
+    const updatedPicks = Array.isArray(b.picks) ? [...b.picks] : [];
+    const updatedPlayInPicks = Array.isArray(b.playInPicks) ? [...b.playInPicks] : [];
+
+    if (leagueData.pointConfig) {
+      updatedPicks.forEach((p: any) => {
         const res = seriesResults.find(r => r.id === p.matchupId);
-        if (res?.advancingTeamId === p.predictedTeamId) {
-          s += (leagueData.pointConfig[`round${p.predictedRound}`] || 0);
-          if (res.totalGamesPlayed === p.predictedSeriesLength) s += (leagueData.pointConfig.exactGamesBonus || 0);
+        if (res?.advancingTeamId) {
+          if (res.advancingTeamId === p.predictedTeamId) {
+            p.status = PickStatus.CORRECT;
+            s += (leagueData.pointConfig[`round${p.predictedRound}`] || 0);
+            if (res.totalGamesPlayed === p.predictedSeriesLength) s += (leagueData.pointConfig.exactGamesBonus || 0);
+          } else {
+            p.status = PickStatus.INCORRECT;
+          }
+        } else {
+          p.status = PickStatus.PENDING;
         }
       });
+
+      // Add Play-In scoring
+      if (leagueData.pointConfig.playIn) {
+        updatedPlayInPicks.forEach((p: any) => {
+          const res = seriesResults.find(r => r.id === p.matchupId);
+          if (res?.advancingTeamId) {
+            if (res.advancingTeamId === p.predictedWinnerId) {
+              p.status = PickStatus.CORRECT;
+              s += (leagueData.pointConfig.playIn || 0);
+            } else {
+              p.status = PickStatus.INCORRECT;
+            }
+          } else {
+            p.status = PickStatus.PENDING;
+          }
+        });
+      }
     }
 
-    // Add Play-In scoring
-    if (leagueData.pointConfig?.playIn && Array.isArray(b.playInPicks)) {
-      b.playInPicks.forEach((p: any) => {
-        const res = seriesResults.find(r => r.id === p.matchupId);
-        if (res?.advancingTeamId === p.predictedWinnerId) {
-          s += (leagueData.pointConfig.playIn || 0);
-        }
-      });
-    }
     const actualPoints = seriesResults.find(r => r.round === 4)?.actualFinalsTotalPoints || 0;
-    scores.push({ id: doc.id, score: s, tiebreakerDiff: Math.abs(b.tiebreakerPrediction - actualPoints) });
+    scores.push({ 
+      id: doc.id, 
+      score: s, 
+      tiebreakerDiff: Math.abs(b.tiebreakerPrediction - actualPoints),
+      updatedPicks,
+      updatedPlayInPicks
+    });
   }
 
   scores.sort((a, b) => (b.score - a.score) || (a.tiebreakerDiff - b.tiebreakerDiff));
@@ -536,7 +566,12 @@ async function calculateLeagueScores(db: admin.firestore.Firestore, leagueId: st
   for (let i = 0; i < scores.length; i += 500) {
     const batch = db.batch();
     scores.slice(i, i + 500).forEach((item, idx) => {
-      batch.update(db.collection('brackets').doc(item.id), { totalScore: item.score, rank: i + idx + 1 });
+      batch.update(db.collection('brackets').doc(item.id), { 
+        totalScore: item.score, 
+        rank: i + idx + 1,
+        picks: item.updatedPicks,
+        playInPicks: item.updatedPlayInPicks
+      });
     });
     await batch.commit();
   }
