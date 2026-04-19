@@ -5,6 +5,7 @@ import { collection, query, where, orderBy, onSnapshot, getDocs, doc } from 'fir
 import { Bracket, User, League, Team, PickStatus, SeriesResult, Conference } from '../types/database';
 import { Trophy, Medal, ChevronRight, Hash, Eye, CheckCircle2, AlertCircle, Clock } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { getAbbreviation } from '../utils/teamUtils';
 
 interface LeaderboardProps {
   leagueId: string;
@@ -84,10 +85,10 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({ leagueId }) => {
     if (isPreview) {
       // Mock data for preview
       const mockTeams: Record<string, Team> = {
-        'bos': { id: 'bos', teamName: 'Celtics', conference: Conference.EAST, seed: 1, apiTeamId: 1 },
-        'den': { id: 'den', teamName: 'Nuggets', conference: Conference.WEST, seed: 1, apiTeamId: 2 },
-        'mil': { id: 'mil', teamName: 'Bucks', conference: Conference.EAST, seed: 3, apiTeamId: 3 },
-        'okc': { id: 'okc', teamName: 'Thunder', conference: Conference.WEST, seed: 1, apiTeamId: 4 }
+        'bos': { id: 'bos', teamName: 'Celtics', abbreviation: 'BOS', conference: Conference.EAST, seed: 1, apiTeamId: 1 },
+        'den': { id: 'den', teamName: 'Nuggets', abbreviation: 'DEN', conference: Conference.WEST, seed: 1, apiTeamId: 2 },
+        'mil': { id: 'mil', teamName: 'Bucks', abbreviation: 'MIL', conference: Conference.EAST, seed: 3, apiTeamId: 3 },
+        'okc': { id: 'okc', teamName: 'Thunder', abbreviation: 'OKC', conference: Conference.WEST, seed: 1, apiTeamId: 4 }
       };
       setTeams(mockTeams);
       
@@ -307,8 +308,8 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({ leagueId }) => {
     const loser = finalsPick.predictedTeamId === teamE.id ? teamW : teamE;
 
     return {
-      winnerName: winner.teamName,
-      loserName: loser.teamName,
+      winnerName: getAbbreviation(winner),
+      loserName: getAbbreviation(loser),
       games: finalsPick.predictedSeriesLength
     };
   };

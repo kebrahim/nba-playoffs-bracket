@@ -275,6 +275,7 @@ async function fetchNbaStandingsData() {
         id,
         data: {
           teamName: team.displayName,
+          abbreviation: team.abbreviation || team.shortDisplayName || team.name.substring(0, 3).toUpperCase(),
           conference,
           seed,
           apiTeamId: Number(team.id),
@@ -380,7 +381,12 @@ async function fetchNbaResultsData(dbInstance?: admin.firestore.Firestore, speci
         (s.team1Id === winId && s.team2Id === loseId) || (s.team1Id === loseId && s.team2Id === winId)
       );
       if (series) {
-        results.push({ seriesId: series.id, winnerId: winId, totalGames: 4 });
+        results.push({ 
+          seriesId: series.id, 
+          winnerId: winId, 
+          totalGames: 4, 
+          gameId: String(game.id || game.uid || Math.random()) 
+        });
       }
     }
     return results;
@@ -413,17 +419,66 @@ async function syncNbaResults(db: admin.firestore.Firestore, isMock: boolean = f
     return;
   }
 
+  // Fetch current state of matched series to update wins correctly
+  const matchedSeriesIds = [...new Set(results.map(r => r.seriesId))];
+  const seriesSnap = await Promise.all(matchedSeriesIds.map((id: any) => db.collection('seriesResults').doc(String(id)).get()));
+  const currentSeriesMap: Record<string, any> = {};
+  seriesSnap.forEach(snap => {
+    if (snap.exists) currentSeriesMap[snap.id] = snap.data();
+  });
+
   const batch = db.batch();
   results.forEach(res => {
-    batch.update(db.collection('seriesResults').doc(res.seriesId), {
-      advancingTeamId: res.winnerId,
+    const s = currentSeriesMap[res.seriesId];
+    if (!s) return;
+
+    const playedGameIds = Array.isArray(s.playedGameIds) ? s.playedGameIds : [];
+    if (playedGameIds.includes(res.gameId)) {
+        console.log(`- Game ${res.gameId} already processed for series ${res.seriesId}. Skipping win increment.`);
+        return;
+    }
+
+    // Increment Wins
+    let t1w = Number(s.team1Wins) || 0;
+    let t2w = Number(s.team2Wins) || 0;
+    
+    if (res.winnerId === s.team1Id) {
+        t1w++;
+    } else if (res.winnerId === s.team2Id) {
+        t2w++;
+    } else {
+        return;
+    }
+
+    const newPlayedIds = [...playedGameIds, res.gameId];
+    const updates: any = {
+      team1Wins: t1w,
+      team2Wins: t2w,
+      playedGameIds: newPlayedIds,
       lastDataChanged: admin.firestore.FieldValue.serverTimestamp()
-    });
+    };
+
+    // Check for series completion
+    const isPlayIn = res.seriesId.startsWith('PI_');
+    const winsNeeded = isPlayIn ? 1 : 4;
+
+    if (t1w >= winsNeeded) {
+        updates.advancingTeamId = s.team1Id;
+        updates.eliminatedTeamId = s.team2Id;
+        updates.totalGamesPlayed = t1w + t2w;
+    } else if (t2w >= winsNeeded) {
+        updates.advancingTeamId = s.team2Id;
+        updates.eliminatedTeamId = s.team1Id;
+        updates.totalGamesPlayed = t1w + t2w;
+    }
+
+    batch.update(db.collection('seriesResults').doc(res.seriesId), updates);
+    currentSeriesMap[res.seriesId] = { ...s, ...updates };
   });
   
   batch.update(db.collection('globalSettings').doc('config'), { lastDataChanged: admin.firestore.FieldValue.serverTimestamp() });
   await batch.commit();
-  console.log(`Background Sync: Updated ${results.length} series.`);
+  console.log(`Background Sync: Updated ${results.length} results.`);
 }
 
 async function recalculateBracketProgression(db: admin.firestore.Firestore) {

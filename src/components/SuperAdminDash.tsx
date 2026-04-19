@@ -324,11 +324,43 @@ export const SuperAdminDash: React.FC = () => {
         if (seriesId) {
           matchedCount++;
           const ref = doc(db, 'seriesResults', seriesId);
-          batch.set(ref, {
-            advancingTeamId: winnerId,
-            totalGamesPlayed: totalGames,
-            lastDataChanged: serverTimestamp()
-          }, { merge: true });
+          const matchData = series.find(s => s.id === seriesId);
+          if (matchData) {
+            const gameIdForSync = game.gameId || String(game.id || game.uid || Math.random());
+            const playedGameIds = Array.isArray(matchData.playedGameIds) ? matchData.playedGameIds : [];
+            
+            if (!playedGameIds.includes(gameIdForSync)) {
+              let t1w = Number(matchData.team1Wins) || 0;
+              let t2w = Number(matchData.team2Wins) || 0;
+              
+              if (winnerId === matchData.team1Id) t1w++;
+              else if (winnerId === matchData.team2Id) t2w++;
+
+              const newPlayedIds = [...playedGameIds, gameIdForSync];
+              const updates: any = {
+                team1Wins: t1w,
+                team2Wins: t2w,
+                playedGameIds: newPlayedIds,
+                lastDataChanged: serverTimestamp()
+              };
+
+              const isPlayIn = seriesId.startsWith('PI_');
+              const winsNeeded = isPlayIn ? 1 : 4;
+
+              if (t1w >= winsNeeded) {
+                updates.advancingTeamId = matchData.team1Id;
+                updates.eliminatedTeamId = matchData.team2Id;
+                updates.totalGamesPlayed = t1w + t2w;
+              } else if (t2w >= winsNeeded) {
+                updates.advancingTeamId = matchData.team2Id;
+                updates.eliminatedTeamId = matchData.team1Id;
+                updates.totalGamesPlayed = t1w + t2w;
+              }
+
+              batch.set(ref, updates, { merge: true });
+              Object.assign(matchData, updates);
+            }
+          }
         } else if (!localUnmatched.some(u => u.startsWith(gameNameUpdated))) {
           // If we didn't find a series match but we found teams, add to unmatched
           localUnmatched.push(`${gameNameUpdated} - Team IDs matched, but no series record found for this pair.`);
@@ -1050,6 +1082,16 @@ export const SuperAdminDash: React.FC = () => {
                         setTeams(newTeams);
                       }}
                       className="flex-1 bg-transparent border-none text-sm font-bold focus:outline-none"
+                    />
+                    <input 
+                      type="text" 
+                      value={team.abbreviation || ''}
+                      placeholder="ABB"
+                      onChange={(e) => {
+                        const newTeams = teams.map(t => t.id === team.id ? { ...t, abbreviation: e.target.value.toUpperCase() } : t);
+                        setTeams(newTeams);
+                      }}
+                      className="w-10 bg-white/5 border border-white/10 rounded px-1 py-1 text-[10px] font-mono placeholder:text-gray-600"
                     />
                     <input 
                       type="number" 

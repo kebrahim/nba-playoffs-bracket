@@ -2,6 +2,8 @@ import React from 'react';
 import { CheckCircle2, XCircle, MinusCircle } from 'lucide-react';
 import { Team, PickStatus } from '../types/database';
 
+import { getAbbreviation } from '../utils/teamUtils';
+
 interface MatchupCardProps {
   matchupId: string;
   team1: Team | null;
@@ -10,6 +12,8 @@ interface MatchupCardProps {
   actualResult?: {
     advancingTeamId: string;
     totalGamesPlayed: number;
+    team1Wins?: number;
+    team2Wins?: number;
   };
   onPick?: (teamId: string, length: number) => void;
   isLocked?: boolean;
@@ -31,6 +35,29 @@ export const MatchupCard: React.FC<MatchupCardProps> = ({
     const pickedId = userPick.predictedTeamId || userPick.predictedWinnerId;
     if (actualResult.advancingTeamId === pickedId) return PickStatus.CORRECT;
     return PickStatus.INCORRECT;
+  };
+
+  const getSeriesProgressLabel = () => {
+    const status = getDerivedStatus();
+    // If Correct/Incorrect, show that. Otherwise show progress.
+    if (status !== PickStatus.PENDING) return status;
+
+    if (!actualResult || (actualResult.team1Wins === undefined && actualResult.team2Wins === undefined)) {
+        return PickStatus.PENDING;
+    }
+
+    const t1w = actualResult.team1Wins || 0;
+    const t2w = actualResult.team2Wins || 0;
+    const t1Name = getAbbreviation(team1);
+    const t2Name = getAbbreviation(team2);
+
+    if (t1w === t2w) return `Series tied ${t1w}-${t2w}`;
+    
+    if (t1w > t2w) {
+        return `${t1Name} leads ${t1w}-${t2w}`;
+    } else {
+        return `${t2Name} leads ${t2w}-${t1w}`;
+    }
   };
 
   const getStatusIcon = () => {
@@ -64,10 +91,10 @@ export const MatchupCard: React.FC<MatchupCardProps> = ({
             isPicked(team1?.id || '') ? 'bg-orange-500/20' : 'hover:bg-black/5'
           } ${isLocked ? 'cursor-default' : ''}`}
         >
-          <div className="flex items-center gap-2 overflow-hidden">
+          <div className="flex items-center gap-2 overflow-hidden flex-1">
             <span className="text-[10px] font-bold text-gray-500 w-3">{team1?.seed}</span>
             <span className={`text-sm font-bold truncate ${isEliminated(team1?.id || '') ? 'line-through opacity-40' : ''} ${isWinner(team1?.id || '') ? 'text-orange-500' : ''}`}>
-              {team1?.teamName || 'TBD'}
+              {getAbbreviation(team1)}
             </span>
           </div>
           {isPicked(team1?.id || '') && <div className="w-1.5 h-1.5 rounded-full bg-orange-500 shadow-[0_0_8px_rgba(245,132,38,0.8)]" />}
@@ -82,10 +109,10 @@ export const MatchupCard: React.FC<MatchupCardProps> = ({
             isPicked(team2?.id || '') ? 'bg-orange-500/20' : 'hover:bg-black/5'
           } ${isLocked ? 'cursor-default' : ''}`}
         >
-          <div className="flex items-center gap-2 overflow-hidden">
+          <div className="flex items-center gap-2 overflow-hidden flex-1">
             <span className="text-[10px] font-bold text-gray-500 w-3">{team2?.seed}</span>
             <span className={`text-sm font-bold truncate ${isEliminated(team2?.id || '') ? 'line-through opacity-40' : ''} ${isWinner(team2?.id || '') ? 'text-orange-500' : ''}`}>
-              {team2?.teamName || 'TBD'}
+              {getAbbreviation(team2)}
             </span>
           </div>
           {isPicked(team2?.id || '') && <div className="w-1.5 h-1.5 rounded-full bg-orange-500 shadow-[0_0_8px_rgba(245,132,38,0.8)]" />}
@@ -97,7 +124,7 @@ export const MatchupCard: React.FC<MatchupCardProps> = ({
             <div className="flex items-center gap-1.5">
               {getStatusIcon()}
               <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500">
-                {getDerivedStatus()}
+                {getSeriesProgressLabel()}
               </span>
             </div>
             {userPick && !isLocked && !matchupId.startsWith('PI_') && (

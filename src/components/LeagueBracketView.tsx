@@ -236,7 +236,7 @@ export const LeagueBracketView: React.FC = () => {
         matchupId, 
         predictedTeamId: teamId, 
         predictedSeriesLength: length,
-        predictedRound: matchupId.startsWith('R1') ? 1 : matchupId.startsWith('R2') ? 2 : matchupId.startsWith('CF') ? 3 : 4,
+        predictedRound: matchupId.startsWith('R1') ? 1 : matchupId.startsWith('R2') ? 2 : matchupId.startsWith('R3') ? 3 : 4,
         status: 'Pending'
       };
       

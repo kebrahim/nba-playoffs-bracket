@@ -34,6 +34,7 @@ export interface GlobalSettings {
 export interface Team {
   id: string; // Firestore Doc ID
   teamName: string;
+  abbreviation: string;
   conference: Conference;
   seed: number; // 1-10
   apiTeamId: number; // For API-NBA mapping
@@ -44,6 +45,9 @@ export interface SeriesResult {
   round: number;
   team1Id: string;
   team2Id: string;
+  team1Wins: number;
+  team2Wins: number;
+  playedGameIds: string[];
   advancingTeamId: string;
   eliminatedTeamId: string;
   totalGamesPlayed: number;

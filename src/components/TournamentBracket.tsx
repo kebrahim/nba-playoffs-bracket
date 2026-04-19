@@ -23,7 +23,28 @@ export const TournamentBracket: React.FC<TournamentBracketProps> = ({
   onTiebreakerChange
 }) => {
   const [activeConf, setActiveConf] = React.useState<'East' | 'West' | 'Finals'>('East');
-  const getPick = (matchupId: string) => userPicks.find((p: any) => p.matchupId === matchupId);
+  const getPick = (matchupId: string) => {
+    // Check for direct match
+    const pick = userPicks.find((p: any) => p.matchupId === matchupId);
+    if (pick) return pick;
+
+    // Backward compatibility for old IDs
+    const legacyMap: Record<string, string> = {
+      'R1_E_1v8': 'R1_E_1', 'R1_E_4v5': 'R1_E_2', 'R1_E_3v6': 'R1_E_3', 'R1_E_2v7': 'R1_E_4',
+      'R1_W_1v8': 'R1_W_1', 'R1_W_4v5': 'R1_W_2', 'R1_W_3v6': 'R1_W_3', 'R1_W_2v7': 'R1_W_4',
+      'R2_E_M1': 'R2_E_1', 'R2_E_M2': 'R2_E_2',
+      'R2_W_M1': 'R2_W_1', 'R2_W_M2': 'R2_W_2',
+      'R3_E_CF': 'CF_E', 'R3_W_CF': 'CF_W',
+      'R4_Finals': 'FINALS'
+    };
+
+    const legacyId = legacyMap[matchupId];
+    if (legacyId) {
+      return userPicks.find((p: any) => p.matchupId === legacyId);
+    }
+
+    return undefined;
+  };
   const getResult = (matchupId: string) => actualResults.find(r => r.id === matchupId);
 
   const getTeamBySeed = (conf: 'East' | 'West', seed: number) => 
@@ -77,20 +98,20 @@ export const TournamentBracket: React.FC<TournamentBracketProps> = ({
     const piWinner8 = getWinner(`PI_${c}_C`); // Winner of Loser A v Winner B
 
     // Round 1 Matchups
-    const r1_1v8 = { t1: getTeamBySeed(conf, 1), t2: piWinner8 };
-    const r1_4v5 = { t1: getTeamBySeed(conf, 4), t2: getTeamBySeed(conf, 5) };
-    const r1_2v7 = { t1: getTeamBySeed(conf, 2), t2: piWinner7 };
-    const r1_3v6 = { t1: getTeamBySeed(conf, 3), t2: getTeamBySeed(conf, 6) };
+    const r1_1v8 = { t1: getTeamBySeed(conf, 1), t2: piWinner8, id: `R1_${c}_1v8` };
+    const r1_4v5 = { t1: getTeamBySeed(conf, 4), t2: getTeamBySeed(conf, 5), id: `R1_${c}_4v5` };
+    const r1_2v7 = { t1: getTeamBySeed(conf, 2), t2: piWinner7, id: `R1_${c}_2v7` };
+    const r1_3v6 = { t1: getTeamBySeed(conf, 3), t2: getTeamBySeed(conf, 6), id: `R1_${c}_3v6` };
 
     const r1Matchups = [r1_1v8, r1_4v5, r1_3v6, r1_2v7];
 
     // Round 2 Matchups
-    const r2_1 = { t1: getWinner(`R1_${c}_1`), t2: getWinner(`R1_${c}_2`) };
-    const r2_2 = { t1: getWinner(`R1_${c}_3`), t2: getWinner(`R1_${c}_4`) };
+    const r2_1 = { t1: getWinner(`R1_${c}_1v8`), t2: getWinner(`R1_${c}_4v5`), id: `R2_${c}_M1` };
+    const r2_2 = { t1: getWinner(`R1_${c}_2v7`), t2: getWinner(`R1_${c}_3v6`), id: `R2_${c}_M2` };
     const r2Matchups = [r2_1, r2_2];
 
     // Conf Finals
-    const cf = { t1: getWinner(`R2_${c}_1`), t2: getWinner(`R2_${c}_2`) };
+    const cf = { t1: getWinner(`R2_${c}_M1`), t2: getWinner(`R2_${c}_M2`), id: `R3_${c}_CF` };
 
     return (
       <div className="flex flex-col lg:flex-row gap-12 items-center justify-center py-8">
@@ -195,8 +216,8 @@ export const TournamentBracket: React.FC<TournamentBracketProps> = ({
         {/* Round 1 */}
         <div className="space-y-6 flex flex-col items-center lg:items-start">
           <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-gray-500 mb-4 px-2">Round 1</h3>
-          {r1Matchups.map((m, i) => {
-            const matchupId = `R1_${c}_${i + 1}`;
+          {r1Matchups.map((m) => {
+            const matchupId = m.id;
             return (
               <MatchupCard 
                 key={matchupId}
@@ -215,8 +236,8 @@ export const TournamentBracket: React.FC<TournamentBracketProps> = ({
         {/* Round 2 */}
         <div className="space-y-12 flex flex-col items-center lg:items-start">
           <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-gray-500 mb-4 px-2">Semifinals</h3>
-          {r2Matchups.map((m, i) => {
-            const matchupId = `R2_${c}_${i + 1}`;
+          {r2Matchups.map((m) => {
+            const matchupId = m.id;
             return (
               <MatchupCard 
                 key={matchupId}
@@ -236,12 +257,12 @@ export const TournamentBracket: React.FC<TournamentBracketProps> = ({
         <div className="space-y-4 flex flex-col items-center lg:items-start">
           <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-gray-500 mb-4 px-2 text-center lg:text-left">Conf. Finals</h3>
           <MatchupCard 
-            matchupId={`CF_${c}`}
+            matchupId={cf.id}
             team1={cf.t1 || null}
             team2={cf.t2 || null}
-            userPick={getPick(`CF_${c}`) as any}
-            actualResult={getResult(`CF_${c}`)}
-            onPick={(teamId, len) => onPick(`CF_${c}`, teamId, len)}
+            userPick={getPick(cf.id) as any}
+            actualResult={getResult(cf.id)}
+            onPick={(teamId, len) => onPick(cf.id, teamId, len)}
             isLocked={isLocked}
           />
         </div>
@@ -250,14 +271,14 @@ export const TournamentBracket: React.FC<TournamentBracketProps> = ({
   };
 
   const finalsMatchup = {
-    t1: getWinner('CF_E'),
-    t2: getWinner('CF_W')
+    t1: getWinner('R3_E_CF'),
+    t2: getWinner('R3_W_CF')
   };
 
   const getMissingCount = (conf: 'East' | 'West' | 'Finals') => {
     if (conf === 'Finals') {
       let missing = 0;
-      if (!getPick('FINALS')) missing++;
+      if (!getPick('R4_Finals')) missing++;
       if (!tiebreakerPrediction || tiebreakerPrediction <= 0) missing++;
       return missing;
     }
@@ -265,9 +286,9 @@ export const TournamentBracket: React.FC<TournamentBracketProps> = ({
     const c = conf.charAt(0);
     const requiredIds = [
       `PI_${c}_A`, `PI_${c}_B`, `PI_${c}_C`,
-      `R1_${c}_1`, `R1_${c}_2`, `R1_${c}_3`, `R1_${c}_4`,
-      `R2_${c}_1`, `R2_${c}_2`,
-      `CF_${c}`
+      `R1_${c}_1v8`, `R1_${c}_4v5`, `R1_${c}_3v6`, `R1_${c}_2v7`,
+      `R2_${c}_M1`, `R2_${c}_M2`,
+      `R3_${c}_CF`
     ];
     
     return requiredIds.filter(id => !getPick(id)).length;
@@ -327,12 +348,12 @@ export const TournamentBracket: React.FC<TournamentBracketProps> = ({
               {/* Decorative background for Finals */}
               <div className="absolute inset-0 bg-orange-500/10 blur-3xl rounded-full -z-10" />
               <MatchupCard 
-                matchupId="FINALS"
+                matchupId="R4_Finals"
                 team1={finalsMatchup.t1 || null}
                 team2={finalsMatchup.t2 || null}
-                userPick={getPick('FINALS') as any}
-                actualResult={getResult('FINALS')}
-                onPick={(teamId, len) => onPick('FINALS', teamId, len)}
+                userPick={getPick('R4_Finals') as any}
+                actualResult={getResult('R4_Finals')}
+                onPick={(teamId, len) => onPick('R4_Finals', teamId, len)}
                 isLocked={isLocked}
               />
             </div>
