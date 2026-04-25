@@ -24,6 +24,7 @@ export const SuperAdminDash: React.FC = () => {
   const [clearingPicks, setClearingPicks] = useState(false);
   const [testingApi, setTestingApi] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [showInitConfirm, setShowInitConfirm] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [removingParticipant, setRemovingParticipant] = useState<string | null>(null);
   const [unmatchedGames, setUnmatchedGames] = useState<string[]>([]);
@@ -885,13 +886,36 @@ export const SuperAdminDash: React.FC = () => {
           <p className="text-sm font-bold text-gray-900">Utility Actions</p>
           <p className="text-xs text-gray-500 font-medium">Use these during initial setup or to force updates.</p>
         </div>
-        <button 
-          onClick={handleInitializeSeries}
-          disabled={syncing}
-          className="px-4 py-2 bg-white/50 hover:bg-white text-orange-600 border border-orange-200 rounded-xl text-xs font-black uppercase tracking-widest transition-all"
-        >
-          Init Matchups
-        </button>
+        
+        {showInitConfirm ? (
+          <div className="flex items-center gap-2 animate-in fade-in zoom-in-95 duration-200">
+            <p className="text-[10px] font-bold text-orange-600 uppercase tracking-tighter">Reset all series to 0-0?</p>
+            <button 
+              onClick={() => {
+                handleInitializeSeries();
+                setShowInitConfirm(false);
+              }}
+              disabled={syncing}
+              className="px-4 py-2 bg-orange-600 text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-orange-700 transition-all shadow-lg shadow-orange-500/20"
+            >
+              Confirm
+            </button>
+            <button 
+              onClick={() => setShowInitConfirm(false)}
+              className="px-4 py-2 bg-black/5 hover:bg-black/10 text-gray-500 rounded-xl text-xs font-black uppercase tracking-widest transition-all"
+            >
+              Cancel
+            </button>
+          </div>
+        ) : (
+          <button 
+            onClick={() => setShowInitConfirm(true)}
+            disabled={syncing}
+            className="px-4 py-2 bg-white/50 hover:bg-white text-orange-600 border border-orange-200 rounded-xl text-xs font-black uppercase tracking-widest transition-all"
+          >
+            Init Matchups
+          </button>
+        )}
       </div>
 
       {message && (
