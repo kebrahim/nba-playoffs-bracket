@@ -143,6 +143,12 @@ async function startServer() {
       }
     } catch (error: any) {
       console.error('API Test Error:', error.message);
+      if (error.response?.status === 429) {
+        return res.status(429).json({ 
+          status: 'error', 
+          message: 'NBA API Quota Reached: You have exhausted your daily free requests. Please try again tomorrow or upgrade your plan.' 
+        });
+      }
       res.status(500).json({ status: 'error', message: error.message, details: error.response?.data });
     }
   });
@@ -167,6 +173,12 @@ async function startServer() {
       res.json({ status: 'success', games: results });
     } catch (error: any) {
       console.error('Proxy NBA Results Error:', error.message);
+      if (error.response?.status === 429) {
+        return res.status(429).json({ 
+          status: 'error', 
+          message: 'NBA API Quota Reached: You have reached 100% of your free daily requests. Please wait until your quota resets tomorrow.' 
+        });
+      }
       res.status(500).json({ status: 'error', message: error.message });
     }
   });
@@ -177,6 +189,12 @@ async function startServer() {
       res.json({ status: 'success', updates });
     } catch (error: any) {
       console.error('Proxy NBA Standings Error:', error.message);
+      if (error.response?.status === 429) {
+        return res.status(429).json({ 
+          status: 'error', 
+          message: 'NBA API Quota Reached: You have reached 100% of your free daily requests. Please wait until your quota resets tomorrow.' 
+        });
+      }
       res.status(500).json({ status: 'error', message: error.message });
     }
   });
@@ -185,8 +203,14 @@ async function startServer() {
     try {
       if (!db) throw new Error('Database not initialized');
       const isMock = req.query.mock === 'true';
-      await syncNbaResults(db, isMock);
-      res.json({ status: 'success', message: 'NBA results sync completed' });
+      const days = parseInt(req.query.days as string) || 1;
+      const { totalUpdated, resultsByDate } = await syncNbaResults(db, isMock, days);
+      res.json({ 
+        status: 'success', 
+        message: `NBA results sync completed. Found updates for ${totalUpdated} total games over the last ${days} days.`,
+        totalUpdated,
+        details: resultsByDate
+      });
     } catch (error: any) {
       res.status(500).json({ status: 'error', message: error.message });
     }
@@ -358,28 +382,51 @@ async function fetchNbaResultsData(dbInstance?: admin.firestore.Firestore, speci
 
     const results: any[] = [];
     for (const game of completed) {
-      // Handle competitions as both Object (user sample) and Array (standard)
-      const comp = Array.isArray(game.competitions) ? game.competitions[0] : (game.competitions || game);
-      const comps = comp.competitors || [];
+      // Robust competitor discovery (matching frontend logic)
+      const findCompetitors = (obj: any): any[] | null => {
+        if (!obj || typeof obj !== 'object') return null;
+        if (Array.isArray(obj.competitors) && obj.competitors.length > 0) return obj.competitors;
+        for (const key in obj) {
+          if (obj[key] && typeof obj[key] === 'object' && key !== 'status') {
+            const res = findCompetitors(obj[key]);
+            if (res) return res;
+          }
+        }
+        return null;
+      };
+
+      const comps = findCompetitors(game) || [];
+      if (comps.length < 2) {
+        console.warn(`  Could not find competitors for game ${game.id || game.uid}`);
+        continue;
+      }
       
       const winner = comps.find((c: any) => 
         c.winner === true || 
-        (c.score && Number(c.score) > Number(comps.find((o: any) => String(o.id) !== String(c.id))?.score))
+        (c.score !== undefined && Number(c.score) > Number(comps.find((o: any) => String(o.id || o.team?.id) !== String(c.id || c.team?.id))?.score))
       );
       const loser = comps.find((c: any) => 
         c.winner === false || 
-        (c.score && Number(c.score) < Number(comps.find((o: any) => String(o.id) !== String(c.id))?.score))
+        (c.score !== undefined && Number(c.score) < Number(comps.find((o: any) => String(o.id || o.team?.id) !== String(c.id || c.team?.id))?.score))
       );
       
-      if (!winner || !loser) continue;
+      if (!winner || !loser) {
+        console.warn(`  Could not determine winner/loser for game ${game.id || game.uid} among ${comps.length} competitors`);
+        continue;
+      }
 
       const winId = teamsMap[String(winner.id || winner.team?.id)];
       const loseId = teamsMap[String(loser.id || loser.team?.id)];
-      if (!winId || !loseId) continue;
+      
+      if (!winId || !loseId) {
+        console.warn(`  Team mapping failed: WinID=${winner.id || winner.team?.id} -> ${winId}, LoseID=${loser.id || loser.team?.id} -> ${loseId}`);
+        continue;
+      }
 
       const series = seriesList.find((s: any) => 
         (s.team1Id === winId && s.team2Id === loseId) || (s.team1Id === loseId && s.team2Id === winId)
       );
+      
       if (series) {
         results.push({ 
           seriesId: series.id, 
@@ -387,6 +434,8 @@ async function fetchNbaResultsData(dbInstance?: admin.firestore.Firestore, speci
           totalGames: 4, 
           gameId: String(game.id || game.uid || Math.random()) 
         });
+      } else {
+        console.warn(`  No playoff series mapping found for ${winId} vs ${loseId}`);
       }
     }
     return results;
@@ -400,85 +449,114 @@ async function fetchNbaResultsData(dbInstance?: admin.firestore.Firestore, speci
   }
 }
 
-async function syncNbaResults(db: admin.firestore.Firestore, isMock: boolean = false) {
+async function syncNbaResults(db: admin.firestore.Firestore, isMock: boolean = false, days: number = 1): Promise<{ totalUpdated: number, resultsByDate: Record<string, number> }> {
   if (isMock) {
     await db.collection('globalSettings').doc('config').update({ lastDataChanged: admin.firestore.FieldValue.serverTimestamp() });
-    return;
+    return { totalUpdated: 0, resultsByDate: {} };
   }
   
-  console.log('Background Sync: Fetching results...');
-  const results = await fetchNbaResultsData(db);
-  if (results.length === 0) {
-    console.log('Background Sync: No new results found.');
-    return;
-  }
+  console.log(`Background Sync: Fetching results for last ${days} days...`);
+  let totalUpdated = 0;
+  const resultsByDate: Record<string, number> = {};
   
-  // If results is the raw array of events (mapping failed on server), we can't do an auto-sync batch here reliably
-  if (results[0] && !results[0].seriesId) {
-    console.warn('Background sync: Received raw games but missing IDs. Skipping auto-update.');
-    return;
-  }
-
-  // Fetch current state of matched series to update wins correctly
-  const matchedSeriesIds = [...new Set(results.map(r => r.seriesId))];
-  const seriesSnap = await Promise.all(matchedSeriesIds.map((id: any) => db.collection('seriesResults').doc(String(id)).get()));
-  const currentSeriesMap: Record<string, any> = {};
-  seriesSnap.forEach(snap => {
-    if (snap.exists) currentSeriesMap[snap.id] = snap.data();
-  });
-
-  const batch = db.batch();
-  results.forEach(res => {
-    const s = currentSeriesMap[res.seriesId];
-    if (!s) return;
-
-    const playedGameIds = Array.isArray(s.playedGameIds) ? s.playedGameIds : [];
-    if (playedGameIds.includes(res.gameId)) {
-        console.log(`- Game ${res.gameId} already processed for series ${res.seriesId}. Skipping win increment.`);
-        return;
-    }
-
-    // Increment Wins
-    let t1w = Number(s.team1Wins) || 0;
-    let t2w = Number(s.team2Wins) || 0;
+  // We'll process each day
+  for (let i = 1; i <= days; i++) {
+    const targetDate = new Date();
+    targetDate.setDate(targetDate.getDate() - i);
+    const dateStr = targetDate.toISOString().split('T')[0].replace(/-/g, '');
     
-    if (res.winnerId === s.team1Id) {
-        t1w++;
-    } else if (res.winnerId === s.team2Id) {
-        t2w++;
-    } else {
+    console.log(`- Fetching results for: ${dateStr}`);
+    const results = await fetchNbaResultsData(db, dateStr);
+    
+    if (results.length === 0) {
+      console.log(`  No results found for ${dateStr}.`);
+      resultsByDate[dateStr] = 0;
+      continue;
+    }
+
+    // Check if mapping worked on server
+    if (results[0] && !results[0].seriesId) {
+      console.warn(`  Warning: ${results.length} games found for ${dateStr} but they are NOT mapped to series IDs. skipping server sync.`);
+      resultsByDate[dateStr] = 0;
+      continue;
+    }
+
+    const matchedSeriesIds = [...new Set(results.map(r => r.seriesId))];
+    const seriesSnap = await Promise.all(matchedSeriesIds.map((id: any) => db.collection('seriesResults').doc(String(id)).get()));
+    const currentSeriesMap: Record<string, any> = {};
+    seriesSnap.forEach(snap => {
+      if (snap.exists) currentSeriesMap[snap.id] = snap.data();
+    });
+
+    const batch = db.batch();
+    let updatesInBatch = 0;
+
+    results.forEach(res => {
+      const s = currentSeriesMap[res.seriesId];
+      if (!s) {
+        console.warn(`  No series config found for seriesId: ${res.seriesId}`);
         return;
+      }
+
+      const playedGameIds = Array.isArray(s.playedGameIds) ? s.playedGameIds : [];
+      if (playedGameIds.includes(res.gameId)) {
+          // Already handled
+          console.log(`  Game ${res.gameId} already in playedGameIds for series ${res.seriesId}`);
+          return;
+      }
+
+      // Increment Wins
+      let t1w = Number(s.team1Wins) || 0;
+      let t2w = Number(s.team2Wins) || 0;
+      
+      if (res.winnerId === s.team1Id) {
+          t1w++;
+      } else if (res.winnerId === s.team2Id) {
+          t2w++;
+      } else {
+          console.warn(`  Winner ${res.winnerId} does not match series teams ${s.team1Id}/${s.team2Id}`);
+          return;
+      }
+
+      const newPlayedIds = [...playedGameIds, res.gameId];
+      const updates: any = {
+        team1Wins: t1w,
+        team2Wins: t2w,
+        playedGameIds: newPlayedIds,
+        lastDataChanged: admin.firestore.FieldValue.serverTimestamp()
+      };
+
+      // Check for series completion
+      const isPlayIn = res.seriesId.startsWith('PI_');
+      const winsNeeded = isPlayIn ? 1 : 4;
+
+      if (t1w >= winsNeeded) {
+          updates.advancingTeamId = s.team1Id;
+          updates.eliminatedTeamId = s.team2Id;
+          updates.totalGamesPlayed = t1w + t2w;
+      } else if (t2w >= winsNeeded) {
+          updates.advancingTeamId = s.team2Id;
+          updates.eliminatedTeamId = s.team1Id;
+          updates.totalGamesPlayed = t1w + t2w;
+      }
+
+      batch.update(db.collection('seriesResults').doc(res.seriesId), updates);
+      currentSeriesMap[res.seriesId] = { ...s, ...updates };
+      updatesInBatch++;
+    });
+
+    if (updatesInBatch > 0) {
+      await batch.commit();
+      console.log(`  Successfully Updated ${updatesInBatch} results for ${dateStr}.`);
+      totalUpdated += updatesInBatch;
+      resultsByDate[dateStr] = updatesInBatch;
+    } else {
+      resultsByDate[dateStr] = 0;
     }
-
-    const newPlayedIds = [...playedGameIds, res.gameId];
-    const updates: any = {
-      team1Wins: t1w,
-      team2Wins: t2w,
-      playedGameIds: newPlayedIds,
-      lastDataChanged: admin.firestore.FieldValue.serverTimestamp()
-    };
-
-    // Check for series completion
-    const isPlayIn = res.seriesId.startsWith('PI_');
-    const winsNeeded = isPlayIn ? 1 : 4;
-
-    if (t1w >= winsNeeded) {
-        updates.advancingTeamId = s.team1Id;
-        updates.eliminatedTeamId = s.team2Id;
-        updates.totalGamesPlayed = t1w + t2w;
-    } else if (t2w >= winsNeeded) {
-        updates.advancingTeamId = s.team2Id;
-        updates.eliminatedTeamId = s.team1Id;
-        updates.totalGamesPlayed = t1w + t2w;
-    }
-
-    batch.update(db.collection('seriesResults').doc(res.seriesId), updates);
-    currentSeriesMap[res.seriesId] = { ...s, ...updates };
-  });
+  }
   
-  batch.update(db.collection('globalSettings').doc('config'), { lastDataChanged: admin.firestore.FieldValue.serverTimestamp() });
-  await batch.commit();
-  console.log(`Background Sync: Updated ${results.length} results.`);
+  await db.collection('globalSettings').doc('config').update({ lastDataChanged: admin.firestore.FieldValue.serverTimestamp() });
+  return { totalUpdated, resultsByDate };
 }
 
 async function recalculateBracketProgression(db: admin.firestore.Firestore) {
@@ -636,10 +714,11 @@ async function calculateLeagueScores(db: admin.firestore.Firestore, leagueId: st
 cron.schedule('0 9 * * *', async () => {
   if (db) {
     try {
-      await syncNbaResults(db);
+      // Sync last 3 days by default to capture any missed games if server was down or API failed
+      await syncNbaResults(db, false, 3);
       await recalculateBracketProgression(db);
       await recalculateAllLeagues(db, true); // Force recalc after results
-      console.log('Daily automated sync and scoring completed.');
+      console.log('Daily automated sync (last 3 days) and scoring completed.');
     } catch (err) {
       console.error('Daily automated sync failed:', err);
     }

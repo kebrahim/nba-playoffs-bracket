@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { db } from '../firebase';
 import { collection, doc, getDocs, getDoc, setDoc, updateDoc, query, orderBy, writeBatch, deleteDoc, Timestamp, where, onSnapshot, serverTimestamp } from 'firebase/firestore';
 import { Team, Conference, GlobalSettings, SeriesResult, PickStatus } from '../types/database';
-import { Shield, Users, Calendar, Trophy, Save, AlertTriangle, Plus, Trash2, Eye, Pencil } from 'lucide-react';
+import { Shield, Users, Calendar, Trophy, Save, AlertTriangle, Plus, Trash2, Eye, Pencil, History } from 'lucide-react';
 
 export const SuperAdminDash: React.FC = () => {
   const [teams, setTeams] = useState<Team[]>([]);
@@ -27,7 +27,7 @@ export const SuperAdminDash: React.FC = () => {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [removingParticipant, setRemovingParticipant] = useState<string | null>(null);
   const [unmatchedGames, setUnmatchedGames] = useState<string[]>([]);
-  const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+  const [message, setMessage] = useState<{ type: 'success' | 'error' | 'warning' | 'info', text: string } | null>(null);
 
   useEffect(() => {
     const formatDateForInput = (date: Date) => {
@@ -208,287 +208,295 @@ export const SuperAdminDash: React.FC = () => {
     }
   };
 
+  const recalculateAllScores = async () => {
+    console.log('Admin: Starting client-side score recalculation...');
+    const leaguesSnap = await getDocs(collection(db, 'leagues'));
+    const seriesResultsSnap = await getDocs(collection(db, 'seriesResults'));
+    const seriesResults = seriesResultsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+    for (const leagueDoc of leaguesSnap.docs) {
+      const leagueId = leagueDoc.id;
+      const leagueData = leagueDoc.data();
+      console.log(`- Calculating scores for league: ${leagueData.name || leagueId}`);
+      
+      const bracketsQuery = query(collection(db, 'brackets'), where('leagueId', '==', leagueId));
+      const bracketsSnap = await getDocs(bracketsQuery);
+      
+      const scores: { id: string, score: number, tiebreakerDiff: number, updatedPicks: any[], updatedPlayInPicks: any[] }[] = [];
+      
+      for (const bDoc of bracketsSnap.docs) {
+        const b = bDoc.data();
+        let s = 0;
+        const updatedPicks = Array.isArray(b.picks) ? [...b.picks] : [];
+        const updatedPlayInPicks = Array.isArray(b.playInPicks) ? [...b.playInPicks] : [];
+
+        if (leagueData.pointConfig) {
+          updatedPicks.forEach((p: any) => {
+            const res = seriesResults.find((r: any) => r.id === p.matchupId) as any;
+            if (res?.advancingTeamId) {
+              if (res.advancingTeamId === p.predictedTeamId) {
+                p.status = PickStatus.CORRECT;
+                s += (leagueData.pointConfig[`round${p.predictedRound}`] || 0);
+                if (res.totalGamesPlayed === p.predictedSeriesLength) {
+                  s += (leagueData.pointConfig.exactGamesBonus || 0);
+                }
+              } else {
+                p.status = PickStatus.INCORRECT;
+              }
+            } else {
+              p.status = PickStatus.PENDING;
+            }
+          });
+
+          // Play-In Picks
+          if (leagueData.pointConfig?.playIn) {
+            updatedPlayInPicks.forEach((p: any) => {
+              const res = seriesResults.find((r: any) => r.id === p.matchupId) as any;
+              if (res?.advancingTeamId) {
+                if (res.advancingTeamId === p.predictedWinnerId) {
+                  p.status = PickStatus.CORRECT;
+                  s += (leagueData.pointConfig.playIn || 0);
+                } else {
+                  p.status = PickStatus.INCORRECT;
+                }
+              } else {
+                p.status = PickStatus.PENDING;
+              }
+            });
+          }
+        }
+
+        const actualFinalsPoints = (seriesResults.find((r: any) => r.round === 4) as any)?.actualFinalsTotalPoints || 0;
+        scores.push({ 
+          id: bDoc.id, 
+          score: s, 
+          tiebreakerDiff: Math.abs((b.tiebreakerPrediction || 0) - actualFinalsPoints),
+          updatedPicks,
+          updatedPlayInPicks
+        });
+      }
+
+      // Sort by score then tiebreaker
+      scores.sort((a, b) => (b.score - a.score) || (a.tiebreakerDiff - b.tiebreakerDiff));
+
+      // Batch update results in chunks of 50
+      for (let i = 0; i < scores.length; i += 50) {
+        const scoreBatch = writeBatch(db);
+        scores.slice(i, i + 50).forEach((item, idx) => {
+          scoreBatch.update(doc(db, 'brackets', item.id), { 
+            totalScore: item.score, 
+            rank: i + idx + 1,
+            picks: item.updatedPicks,
+            playInPicks: item.updatedPlayInPicks
+          });
+        });
+        await scoreBatch.commit();
+      }
+    
+      await updateDoc(doc(db, 'leagues', leagueId), { 
+        lastCalculated: serverTimestamp() 
+      });
+    }
+  };
+
+  const processNbaGamesBatch = async (games: any[], currentSeries: SeriesResult[], currentTeams: Team[]) => {
+    if (!games || games.length === 0) return { matchedCount: 0, unmatched: [], updatedSeries: currentSeries };
+    
+    const batch = writeBatch(db);
+    let matchedCount = 0;
+    const localUnmatched: string[] = [];
+    
+    // Use the passed in state to track updates across multiple calls
+    const localSeriesState = [...currentSeries];
+    const seriesUpdates: Record<string, any> = {};
+
+    console.log(`Processing batch of ${games.length} games...`);
+
+    for (const game of games) {
+      let seriesId = game.seriesId;
+      let winnerId = game.winnerId;
+      const gameApiDate = game.date || "Unknown Date";
+      
+      // If server already mapped it, we still should double check if winner is logic
+      // But if server didn't map it, we try our best here.
+      
+      // Extract competitors
+      let comps: any[] = [];
+      if (Array.isArray(game.competitions) && game.competitions[0]?.competitors) {
+        comps = game.competitions[0].competitors;
+      } else if (game.competitions?.competitors && Array.isArray(game.competitions.competitors)) {
+        comps = game.competitions.competitors;
+      } else if (Array.isArray(game.competitors)) {
+        comps = game.competitors;
+      } else {
+        const findCompetitors = (obj: any): any[] | null => {
+          if (!obj || typeof obj !== 'object') return null;
+          if (Array.isArray(obj.competitors) && obj.competitors.length > 0) return obj.competitors;
+          for (const key in obj) {
+            if (obj[key] && typeof obj[key] === 'object' && key !== 'status') {
+              const res = findCompetitors(obj[key]);
+              if (res) return res;
+            }
+          }
+          return null;
+        };
+        comps = findCompetitors(game) || [];
+      }
+
+      const t1Display = comps[0]?.team?.displayName || comps[0]?.displayName || "Team 1";
+      const t2Display = comps[1]?.team?.displayName || comps[1]?.displayName || "Team 2";
+      const gameName = game.name || `${t1Display} vs ${t2Display}`;
+
+      // Mapping logic for raw games (or verification)
+      if (comps.length >= 2) {
+        const win = comps.find((c: any) => 
+          c.winner === true || 
+          (c.score && Number(c.score) > Number(comps.find((o: any) => String(o.id || o.team?.id) !== String(c.id || c.team?.id))?.score))
+        );
+        const lose = comps.find((c: any) => 
+          c.winner === false || 
+          (c.score && Number(c.score) < Number(comps.find((o: any) => String(o.id || o.team?.id) !== String(c.id || c.team?.id))?.score))
+        );
+        
+        if (win && lose) {
+          const winApiId = Number(win.id || win.team?.id);
+          const loseApiId = Number(lose.id || lose.team?.id);
+          const winTeam = currentTeams.find(t => Number(t.apiTeamId) === winApiId);
+          const loseTeam = currentTeams.find(t => Number(t.apiTeamId) === loseApiId);
+          
+          if (winTeam && loseTeam) {
+            console.log(`Mapped game: ${winTeam.teamName} beat ${loseTeam.teamName} on ${gameApiDate}`);
+            // Overwrite winnerId with mapped local team ID
+            winnerId = winTeam.id;
+            const loserId = loseTeam.id;
+
+            // Find matching series if seriesId is missing or needs validation
+            const match = localSeriesState.find(s => {
+              const s1 = String(s.team1Id).toLowerCase();
+              const s2 = String(s.team2Id).toLowerCase();
+              const w = String(winTeam.id).toLowerCase();
+              const l = String(loseTeam.id).toLowerCase();
+              return (s1 === w && s2 === l) || (s1 === l && s2 === w);
+            });
+
+            if (match) {
+              if (!seriesId) seriesId = match.id;
+            } else {
+              if (!seriesId) {
+                localUnmatched.push(`${gameName} - No series contains both ${winTeam.teamName} and ${loseTeam.teamName} (IDs: ${winTeam.id} vs ${loseTeam.id})`);
+              }
+            }
+          } else {
+            if (!seriesId) {
+              localUnmatched.push(`${gameName} - Could not map API team IDs (${winApiId} vs ${loseApiId}) to any existing teams in database.`);
+            }
+          }
+        }
+      }
+
+      if (seriesId) {
+        const matchIdx = localSeriesState.findIndex(s => s.id === seriesId);
+        if (matchIdx !== -1) {
+          const matchData = localSeriesState[matchIdx];
+          const gameIdForSync = game.gameId || String(game.id || game.uid || Math.random());
+          const playedGameIds = Array.isArray(matchData.playedGameIds) ? matchData.playedGameIds : [];
+          
+          if (!playedGameIds.includes(gameIdForSync)) {
+            // Check if winnerId actually belongs to this series
+            if (winnerId !== matchData.team1Id && winnerId !== matchData.team2Id) {
+              console.warn(`Game marked winner as ${winnerId} but series ${seriesId} is ${matchData.team1Id} vs ${matchData.team2Id}`);
+              localUnmatched.push(`${gameName} - Winner ID ${winnerId} does not match any team in series ${seriesId}`);
+              continue;
+            }
+
+            matchedCount++;
+            let t1w = Number(matchData.team1Wins) || 0;
+            let t2w = Number(matchData.team2Wins) || 0;
+            
+            if (winnerId === matchData.team1Id) t1w++;
+            else t2w++;
+
+            const newPlayedIds = [...playedGameIds, gameIdForSync];
+            const updates: any = {
+              team1Wins: t1w,
+              team2Wins: t2w,
+              playedGameIds: newPlayedIds,
+              lastDataChanged: serverTimestamp()
+            };
+
+            const isPlayIn = seriesId.startsWith('PI_');
+            const winsNeeded = isPlayIn ? 1 : 4;
+            if (t1w >= winsNeeded) {
+              updates.advancingTeamId = matchData.team1Id;
+              updates.eliminatedTeamId = matchData.team2Id;
+              updates.totalGamesPlayed = t1w + t2w;
+            } else if (t2w >= winsNeeded) {
+              updates.advancingTeamId = matchData.team2Id;
+              updates.eliminatedTeamId = matchData.team1Id;
+              updates.totalGamesPlayed = t1w + t2w;
+            }
+
+            // Update local state for next games in this batch
+            localSeriesState[matchIdx] = { ...matchData, ...updates };
+            // Collect updates for batch write
+            seriesUpdates[seriesId] = { ...(seriesUpdates[seriesId] || {}), ...updates };
+          }
+        }
+      }
+    }
+
+    // Apply all collected updates to batch
+    Object.entries(seriesUpdates).forEach(([id, updates]) => {
+      batch.set(doc(db, 'seriesResults', id), updates, { merge: true });
+    });
+
+    if (matchedCount > 0) {
+      batch.set(doc(db, 'globalSettings', 'config'), { lastDataChanged: serverTimestamp() }, { merge: true });
+      await batch.commit();
+    }
+
+    return { matchedCount, unmatched: localUnmatched, updatedSeries: localSeriesState };
+  };
+
+
   const handleSyncAndCalculate = async () => {
     setSyncing(true);
     setMessage(null);
     setUnmatchedGames([]);
-    console.log("--- SYNC DEBUG START ---");
-    console.log("Current Teams in State:", teams.map(t => `${t.id}: ${t.teamName} (API: ${t.apiTeamId}, Seed: ${t.seed})`));
-    console.log("Current Series in State:", series.map(s => `${s.id}: ${s.team1Id} vs ${s.team2Id}`));
-
     try {
-      // 1. Fetch data from RapidAPI via Server Proxy (Server has the API Key)
-      console.log('Admin: Requesting NBA results from proxy...');
       const url = syncDate ? `/api/proxy/nba-results?date=${syncDate.replace(/-/g, '')}` : '/api/proxy/nba-results';
-      const syncRes = await fetch(url, { method: 'GET' });
+      const syncRes = await fetch(url);
       const syncData = await syncRes.json();
+      
+      if (!syncRes.ok) {
+        if (syncRes.status === 429) {
+          throw new Error(syncData.message || 'NBA API Quota Reached. Please try again tomorrow.');
+        }
+        throw new Error(syncData.message || `Request failed with status ${syncRes.status}`);
+      }
       
       if (syncData.status !== 'success') throw new Error(syncData.message);
       
-      const games = syncData.games || [];
-      console.log(`Admin: Received ${games.length} games from API.`);
-
-      if (games.length === 0) {
-        setMessage({ type: 'success', text: 'No completed games found for this date on the NBA API.' });
-        setSyncing(false);
-        return;
-      }
-
-      // 2. Process and Write to Firestore FRONTEND-SIDE
-      const batch = writeBatch(db);
-      let matchedCount = 0;
-      
-      // Update seriesResults
-      const localUnmatched: string[] = [];
-      for (const game of games) {
-        let seriesId = game.seriesId;
-        let winnerId = game.winnerId;
-        let totalGames = game.totalGames || 4;
-        
-        // Extract competitors using both direct paths and recursive search
-        let comps: any[] = [];
-        if (Array.isArray(game.competitions) && game.competitions[0]?.competitors) {
-          comps = game.competitions[0].competitors;
-        } else if (game.competitions?.competitors && Array.isArray(game.competitions.competitors)) {
-          comps = game.competitions.competitors;
-        } else if (Array.isArray(game.competitors)) {
-          comps = game.competitors;
-        } else {
-          // Recursive search as safety
-          const findCompetitors = (obj: any): any[] | null => {
-            if (!obj || typeof obj !== 'object') return null;
-            if (Array.isArray(obj.competitors) && obj.competitors.length > 0) return obj.competitors;
-            for (const key in obj) {
-              if (obj[key] && typeof obj[key] === 'object' && key !== 'status') {
-                const res = findCompetitors(obj[key]);
-                if (res) return res;
-              }
-            }
-            return null;
-          };
-          comps = findCompetitors(game) || [];
-        }
-
-        const t1Display = comps[0]?.team?.displayName || comps[0]?.displayName || "Team 1";
-        const t2Display = comps[1]?.team?.displayName || comps[1]?.displayName || "Team 2";
-        const gameNameUpdated = game.name || `${t1Display} vs ${t2Display}`;
-
-        console.log(`Processing Game: ${gameNameUpdated}`);
-
-        // Fallback: If server returned RAW games (because of IAM), do mapping here
-        if (!seriesId && comps.length >= 2) {
-           const win = comps.find((c: any) => 
-             c.winner === true || 
-             (c.score && Number(c.score) > Number(comps.find((o: any) => String(o.id || o.team?.id) !== String(c.id || c.team?.id))?.score))
-           );
-           const lose = comps.find((c: any) => 
-             c.winner === false || 
-             (c.score && Number(c.score) < Number(comps.find((o: any) => String(o.id || o.team?.id) !== String(c.id || c.team?.id))?.score))
-           );
-           
-           if (win && lose) {
-             const winApiId = Number(win.id || win.team?.id);
-             const loseApiId = Number(lose.id || lose.team?.id);
-             console.log(`- API Winner ID: ${winApiId}, Loser ID: ${loseApiId} (Scores: ${win.score} - ${lose.score})`);
-             
-             const winTeam = teams.find(t => Number(t.apiTeamId) === winApiId);
-             const loseTeam = teams.find(t => Number(t.apiTeamId) === loseApiId);
-             
-             if (winTeam && loseTeam) {
-                console.log(`- Found Teams: ${winTeam.id} (Winner) and ${loseTeam.id} (Loser)`);
-                winnerId = winTeam.id;
-                const match = series.find(s => {
-                  const s1 = String(s.team1Id).trim().toLowerCase();
-                  const s2 = String(s.team2Id).trim().toLowerCase();
-                  const w = String(winTeam.id).trim().toLowerCase();
-                  const l = String(loseTeam.id).trim().toLowerCase();
-                  return (s1 && s2) && ((s1 === w && s2 === l) || (s1 === l && s2 === w));
-                });
-                if (match) {
-                  seriesId = match.id;
-                  console.log(`- MATCHED to Series: ${seriesId}`);
-                } else {
-                  console.warn(`- NO SERIES FOUND in database for matchup [${winTeam.id} vs ${loseTeam.id}]. Searched ${series.length} series.`);
-                }
-             } else {
-                console.warn(`- TEAM MISSING: WinFound=${!!winTeam}, LoseFound=${!!loseTeam}`);
-                localUnmatched.push(`${gameNameUpdated} (IDs: ${winApiId} vs ${loseApiId}) - Missing internal team mapping.`);
-             }
-           } else {
-             console.warn(`- COULD NOT DETERMINE WINNER for ${gameNameUpdated}. comps.length: ${comps.length}. Values:`, comps.map((c:any) => `ID:${c.id || c.team?.id} Score:${c.score} Win:${c.winner}`));
-           }
-        } else if (!seriesId) {
-          console.warn(`- NO COMPETITORS found for ${gameNameUpdated}. Full game object:`, JSON.stringify(game));
-        }
-
-        if (seriesId) {
-          matchedCount++;
-          const ref = doc(db, 'seriesResults', seriesId);
-          const matchData = series.find(s => s.id === seriesId);
-          if (matchData) {
-            const gameIdForSync = game.gameId || String(game.id || game.uid || Math.random());
-            const playedGameIds = Array.isArray(matchData.playedGameIds) ? matchData.playedGameIds : [];
-            
-            if (!playedGameIds.includes(gameIdForSync)) {
-              let t1w = Number(matchData.team1Wins) || 0;
-              let t2w = Number(matchData.team2Wins) || 0;
-              
-              if (winnerId === matchData.team1Id) t1w++;
-              else if (winnerId === matchData.team2Id) t2w++;
-
-              const newPlayedIds = [...playedGameIds, gameIdForSync];
-              const updates: any = {
-                team1Wins: t1w,
-                team2Wins: t2w,
-                playedGameIds: newPlayedIds,
-                lastDataChanged: serverTimestamp()
-              };
-
-              const isPlayIn = seriesId.startsWith('PI_');
-              const winsNeeded = isPlayIn ? 1 : 4;
-
-              if (t1w >= winsNeeded) {
-                updates.advancingTeamId = matchData.team1Id;
-                updates.eliminatedTeamId = matchData.team2Id;
-                updates.totalGamesPlayed = t1w + t2w;
-              } else if (t2w >= winsNeeded) {
-                updates.advancingTeamId = matchData.team2Id;
-                updates.eliminatedTeamId = matchData.team1Id;
-                updates.totalGamesPlayed = t1w + t2w;
-              }
-
-              batch.set(ref, updates, { merge: true });
-              Object.assign(matchData, updates);
-            }
-          }
-        } else if (!localUnmatched.some(u => u.startsWith(gameNameUpdated))) {
-          // If we didn't find a series match but we found teams, add to unmatched
-          localUnmatched.push(`${gameNameUpdated} - Team IDs matched, but no series record found for this pair.`);
-        }
-      }
-
-      setUnmatchedGames(localUnmatched);
-      console.log(`Sync Summary: Matched=${matchedCount}, Unmatched=${localUnmatched.length}`);
+      const { matchedCount, unmatched, updatedSeries } = await processNbaGamesBatch(syncData.games || [], series, teams);
+      setSeries(updatedSeries);
+      setUnmatchedGames(unmatched);
 
       if (matchedCount === 0) {
-        setMessage({ 
-          type: 'error', 
-          text: `Found ${games.length} completed games, but none matched your active playoff matchups. Ensure your teams have the correct API IDs set.` 
-        });
-        setSyncing(false);
-        return;
+        setMessage({ type: 'warning', text: `Found ${syncData.games?.length || 0} games, but 0 updates were applied (already synced or no matchup match).` });
+      } else {
+        // Use the updated records for recalculation
+        await recalculateAllScores();
+        await handleRecalculateProgression();
+        setMessage({ type: 'success', text: `Successfully synced ${matchedCount} games and updated scores.` });
       }
-
-      // Update global trigger
-      batch.set(doc(db, 'globalSettings', 'config'), {
-        lastDataChanged: serverTimestamp()
-      }, { merge: true });
-
-      await batch.commit();
-      console.log('Admin: Results written to Firestore.');
-
-      // 3. Perform Score Calculation in Frontend (Bypassing Server IAM issues)
-      console.log('Admin: Starting client-side score recalculation...');
-      
-      const leaguesSnap = await getDocs(collection(db, 'leagues'));
-      const seriesResultsSnap = await getDocs(collection(db, 'seriesResults'));
-      const seriesResults = seriesResultsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-
-        for (const leagueDoc of leaguesSnap.docs) {
-          const leagueId = leagueDoc.id;
-          const leagueData = leagueDoc.data();
-          console.log(`- Calculating scores for league: ${leagueData.name || leagueId}`);
-          
-          const bracketsQuery = query(collection(db, 'brackets'), where('leagueId', '==', leagueId));
-          const bracketsSnap = await getDocs(bracketsQuery);
-          
-          const scores: { id: string, score: number, tiebreakerDiff: number, updatedPicks: any[], updatedPlayInPicks: any[] }[] = [];
-          
-          for (const bDoc of bracketsSnap.docs) {
-            const b = bDoc.data();
-            let s = 0;
-            const updatedPicks = Array.isArray(b.picks) ? [...b.picks] : [];
-            const updatedPlayInPicks = Array.isArray(b.playInPicks) ? [...b.playInPicks] : [];
-
-            if (leagueData.pointConfig) {
-              updatedPicks.forEach((p: any) => {
-                const res = seriesResults.find((r: any) => r.id === p.matchupId) as any;
-                if (res?.advancingTeamId) {
-                  if (res.advancingTeamId === p.predictedTeamId) {
-                    p.status = PickStatus.CORRECT;
-                    s += (leagueData.pointConfig[`round${p.predictedRound}`] || 0);
-                    if (res.totalGamesPlayed === p.predictedSeriesLength) {
-                      s += (leagueData.pointConfig.exactGamesBonus || 0);
-                    }
-                  } else {
-                    p.status = PickStatus.INCORRECT;
-                  }
-                } else {
-                  p.status = PickStatus.PENDING;
-                }
-              });
-
-              // Play-In Picks
-              if (leagueData.pointConfig?.playIn) {
-                updatedPlayInPicks.forEach((p: any) => {
-                  const res = seriesResults.find((r: any) => r.id === p.matchupId) as any;
-                  if (res?.advancingTeamId) {
-                    if (res.advancingTeamId === p.predictedWinnerId) {
-                      p.status = PickStatus.CORRECT;
-                      s += (leagueData.pointConfig.playIn || 0);
-                    } else {
-                      p.status = PickStatus.INCORRECT;
-                    }
-                  } else {
-                    p.status = PickStatus.PENDING;
-                  }
-                });
-              }
-            }
-
-            const actualFinalsPoints = (seriesResults.find((r: any) => r.round === 4) as any)?.actualFinalsTotalPoints || 0;
-            scores.push({ 
-              id: bDoc.id, 
-              score: s, 
-              tiebreakerDiff: Math.abs((b.tiebreakerPrediction || 0) - actualFinalsPoints),
-              updatedPicks,
-              updatedPlayInPicks
-            });
-          }
-
-          // Sort by score then tiebreaker
-          scores.sort((a, b) => (b.score - a.score) || (a.tiebreakerDiff - b.tiebreakerDiff));
-
-          // Batch update results in chunks of 50
-          for (let i = 0; i < scores.length; i += 50) {
-            const scoreBatch = writeBatch(db);
-            scores.slice(i, i + 50).forEach((item, idx) => {
-              scoreBatch.update(doc(db, 'brackets', item.id), { 
-                totalScore: item.score, 
-                rank: i + idx + 1,
-                picks: item.updatedPicks,
-                playInPicks: item.updatedPlayInPicks
-              });
-            });
-            await scoreBatch.commit();
-          }
-        
-        await updateDoc(doc(db, 'leagues', leagueId), { 
-          lastCalculated: serverTimestamp() 
-        });
-      }
-
-      // 4. Update Progression
-      await handleRecalculateProgression();
-
-      setMessage({ type: 'success', text: 'NBA results synced and scores recalculated successfully via frontend transition!' });
     } catch (error) {
-      console.error("Sync/Calc Error:", error);
-      setMessage({ type: 'error', text: error instanceof Error ? error.message : 'Failed to sync and calculate scores.' });
+      console.error("Sync Error:", error);
+      setMessage({ type: 'error', text: error instanceof Error ? error.message : 'Failed to sync results.' });
     } finally {
       setSyncing(false);
     }
   };
+
 
   const handleTestApi = async () => {
     setTestingApi(true);
@@ -549,6 +557,14 @@ export const SuperAdminDash: React.FC = () => {
     try {
       const res = await fetch('/api/proxy/nba-standings', { method: 'GET' });
       const data = await res.json();
+      
+      if (!res.ok) {
+        if (res.status === 429) {
+          throw new Error(data.message || 'NBA API Quota Reached. Please try again tomorrow.');
+        }
+        throw new Error(data.message || `Request failed with status ${res.status}`);
+      }
+
       if (data.status !== 'success') throw new Error(data.message);
 
       const updates = data.updates || [];
@@ -577,10 +593,16 @@ export const SuperAdminDash: React.FC = () => {
   const handleInitializeSeries = async () => {
     setSyncing(true);
     setMessage(null);
-    console.log("--- INIT MATCHUPS DEBUG START ---");
-    console.log("Teams in State:", teams.map(t => `${t.id}: ${t.teamName} (Conf: ${t.conference}, Seed: ${t.seed})`));
     
     try {
+      // 1. Always get latest teams first to avoid using stale state
+      const teamsSnap = await getDocs(query(collection(db, 'teams'), orderBy('seed', 'asc')));
+      const latestTeams = teamsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Team));
+      setTeams(latestTeams);
+
+      console.log("--- INIT MATCHUPS DEBUG ---");
+      console.log(`Using ${latestTeams.length} teams for initialization.`);
+
       const batch = writeBatch(db);
       const rounds = [
         // Play-In
@@ -614,11 +636,11 @@ export const SuperAdminDash: React.FC = () => {
         let t2 = '';
         
         if (r.s1) {
-          const t1Obj = teams.find(t => t.conference === r.conf && Number(t.seed) === r.s1);
+          const t1Obj = latestTeams.find(t => t.conference === r.conf && Number(t.seed) === r.s1);
           t1 = t1Obj?.id || '';
         }
         if (r.s2) {
-          const t2Obj = teams.find(t => t.conference === r.conf && Number(t.seed) === r.s2);
+          const t2Obj = latestTeams.find(t => t.conference === r.conf && Number(t.seed) === r.s2);
           t2 = t2Obj?.id || '';
         }
         
@@ -630,6 +652,10 @@ export const SuperAdminDash: React.FC = () => {
           round: r.round,
           team1Id: t1,
           team2Id: t2,
+          team1Wins: 0,
+          team2Wins: 0,
+          playedGameIds: [],
+          isFinal: false,
           advancingTeamId: '',
           eliminatedTeamId: '',
           totalGamesPlayed: 0,
@@ -827,25 +853,27 @@ export const SuperAdminDash: React.FC = () => {
               onChange={(e) => setSyncDate(e.target.value)}
               className="px-3 py-2 rounded-xl text-xs bg-black/5 border border-black/10 outline-none focus:border-orange-500/50"
             />
-            <p className="text-[9px] text-gray-400 mt-1 italic px-1">Background sync runs daily at 9AM. Manual sync defaults to 'Auto' if date is empty.</p>
+            <p className="text-[9px] text-gray-400 mt-1 italic px-1">Manual sync defaults to yesterday if date is empty.</p>
           </div>
-          <button 
-            onClick={handleSyncAndCalculate}
-            disabled={syncing}
-            className={`px-6 py-3 rounded-2xl font-black uppercase italic tracking-tighter transition-all flex items-center gap-3 ${syncing ? 'bg-white/10 text-gray-500 cursor-not-allowed' : 'bg-red-500 hover:bg-red-600 text-white shadow-lg shadow-red-500/20'}`}
-          >
-            {syncing ? (
-              <>
-                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                Processing...
-              </>
-            ) : (
-              <>
-                <Trophy className="w-5 h-5" />
-                Sync Results & Score
-              </>
-            )}
-          </button>
+          <div className="flex flex-col gap-2">
+            <button 
+              onClick={handleSyncAndCalculate}
+              disabled={syncing}
+              className={`px-6 py-3 rounded-2xl font-black uppercase italic tracking-tighter transition-all flex items-center gap-3 ${syncing ? 'bg-white/10 text-gray-500 cursor-not-allowed' : 'bg-red-500 hover:bg-red-600 text-white shadow-lg shadow-red-500/20'}`}
+            >
+              {syncing ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  Processing...
+                </>
+              ) : (
+                <>
+                  <Trophy className="w-5 h-5" />
+                  Sync Results & Score
+                </>
+              )}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -867,10 +895,22 @@ export const SuperAdminDash: React.FC = () => {
       </div>
 
       {message && (
-        <div className={`p-6 rounded-3xl border animate-in zoom-in-95 duration-300 shadow-xl ${message.type === 'success' ? 'bg-emerald-500/10 border-emerald-500/50 text-emerald-400' : 'bg-red-500/10 border-red-500/50 text-red-400'}`}>
+        <div className={`p-6 rounded-3xl border animate-in zoom-in-95 duration-300 shadow-xl ${
+          message.type === 'success' ? 'bg-emerald-500/10 border-emerald-500/50 text-emerald-400' : 
+          message.type === 'error' ? 'bg-red-500/10 border-red-500/50 text-red-400' :
+          message.type === 'warning' ? 'bg-amber-500/10 border-amber-500/50 text-amber-400' :
+          'bg-blue-500/10 border-blue-500/50 text-blue-400'
+        }`}>
           <div className="flex items-center gap-4 font-bold mb-3">
-            <div className={`p-2 rounded-xl ${message.type === 'success' ? 'bg-emerald-500/20' : 'bg-red-500/20'}`}>
-              {message.type === 'success' ? <Trophy className="w-5 h-5" /> : <Shield className="w-5 h-5" />}
+            <div className={`p-2 rounded-xl ${
+              message.type === 'success' ? 'bg-emerald-500/20' : 
+              message.type === 'error' ? 'bg-red-500/20' :
+              message.type === 'warning' ? 'bg-amber-500/20' :
+              'bg-blue-500/20'
+            }`}>
+              {message.type === 'success' ? <Trophy className="w-5 h-5" /> : 
+               message.type === 'error' ? <Shield className="w-5 h-5" /> :
+               <AlertTriangle className="w-5 h-5" />}
             </div>
             <div className="flex flex-col">
               <span className="text-xs uppercase tracking-[0.2em] opacity-60 leading-none mb-1">{message.type}</span>
@@ -878,7 +918,7 @@ export const SuperAdminDash: React.FC = () => {
             </div>
           </div>
           
-          {unmatchedGames.length > 0 && message.type === 'error' && (
+          {(unmatchedGames.length > 0 && (message.type === 'error' || message.type === 'warning')) && (
             <div className="mt-6 pt-6 border-t border-red-500/20">
               <div className="flex items-center justify-between mb-4">
                 <span className="text-[10px] uppercase tracking-widest font-black text-red-500 bg-red-500/10 px-2 py-0.5 rounded">Unmatched API Games</span>
