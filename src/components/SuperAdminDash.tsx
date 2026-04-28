@@ -209,11 +209,26 @@ export const SuperAdminDash: React.FC = () => {
     }
   };
 
-  const recalculateAllScores = async () => {
+  const recalculateAllScores = async (passedSeries?: SeriesResult[]) => {
     console.log('Admin: Starting client-side score recalculation...');
     const leaguesSnap = await getDocs(collection(db, 'leagues'));
-    const seriesResultsSnap = await getDocs(collection(db, 'seriesResults'));
-    const seriesResults = seriesResultsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+    
+    let seriesResults: any[] = [];
+    if (passedSeries && passedSeries.length > 0) {
+      seriesResults = passedSeries;
+    } else {
+      const seriesResultsSnap = await getDocs(collection(db, 'seriesResults'));
+      seriesResults = seriesResultsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+    }
+
+    const legacyMap: Record<string, string> = {
+      'R1_E_1': 'R1_E_1v8', 'R1_E_2': 'R1_E_4v5', 'R1_E_3': 'R1_E_3v6', 'R1_E_4': 'R1_E_2v7',
+      'R1_W_1': 'R1_W_1v8', 'R1_W_2': 'R1_W_4v5', 'R1_W_3': 'R1_W_3v6', 'R1_W_4': 'R1_W_2v7',
+      'R2_E_1': 'R2_E_M1', 'R2_E_2': 'R2_E_M2',
+      'R2_W_1': 'R2_W_M1', 'R2_W_2': 'R2_W_M2',
+      'CF_E': 'R3_E_CF', 'CF_W': 'R3_W_CF',
+      'FINALS': 'R4_Finals'
+    };
 
     for (const leagueDoc of leaguesSnap.docs) {
       const leagueId = leagueDoc.id;
@@ -223,23 +238,49 @@ export const SuperAdminDash: React.FC = () => {
       const bracketsQuery = query(collection(db, 'brackets'), where('leagueId', '==', leagueId));
       const bracketsSnap = await getDocs(bracketsQuery);
       
-      const scores: { id: string, score: number, tiebreakerDiff: number, updatedPicks: any[], updatedPlayInPicks: any[] }[] = [];
+      const scores: { id: string, score: number, tiebreakerDiff: number, updatedPicks: any[], updatedPlayInPicks: any[], roundScores: any }[] = [];
       
       for (const bDoc of bracketsSnap.docs) {
         const b = bDoc.data();
         let s = 0;
+        const currentRoundScores = { playIn: 0, r1: 0, r2: 0, cf: 0, finals: 0 };
         const updatedPicks = Array.isArray(b.picks) ? [...b.picks] : [];
         const updatedPlayInPicks = Array.isArray(b.playInPicks) ? [...b.playInPicks] : [];
 
         if (leagueData.pointConfig) {
           updatedPicks.forEach((p: any) => {
-            const res = seriesResults.find((r: any) => r.id === p.matchupId) as any;
+            const actualId = legacyMap[p.matchupId] || p.matchupId;
+            const res = seriesResults.find((r: any) => r.id === actualId) as any;
+            
             if (res?.advancingTeamId) {
+              // Infer round if missing
+              const round = p.predictedRound || (
+                actualId.startsWith('R1') ? 1 : 
+                actualId.startsWith('R2') ? 2 : 
+                actualId.startsWith('R3') ? 3 : 
+                (actualId.startsWith('R4') || actualId === 'FINALS') ? 4 : 
+                1
+              );
+              
               if (res.advancingTeamId === p.predictedTeamId) {
                 p.status = PickStatus.CORRECT;
-                s += (leagueData.pointConfig[`round${p.predictedRound}`] || 0);
+                const roundKey = round === 4 ? 'finals' : `round${round}`;
+                const points = Number(leagueData.pointConfig?.[roundKey]) || 0;
+                s += points;
+
+                // Track round scores
+                if (round === 1) currentRoundScores.r1 += points;
+                else if (round === 2) currentRoundScores.r2 += points;
+                else if (round === 3) currentRoundScores.cf += points;
+                else if (round === 4) currentRoundScores.finals += points;
+                
                 if (res.totalGamesPlayed === p.predictedSeriesLength) {
-                  s += (leagueData.pointConfig.exactGamesBonus || 0);
+                  const bonus = (Number(leagueData.pointConfig?.exactGamesBonus) || 0);
+                  s += bonus;
+                  if (round === 1) currentRoundScores.r1 += bonus;
+                  else if (round === 2) currentRoundScores.r2 += bonus;
+                  else if (round === 3) currentRoundScores.cf += bonus;
+                  else if (round === 4) currentRoundScores.finals += bonus;
                 }
               } else {
                 p.status = PickStatus.INCORRECT;
@@ -252,11 +293,14 @@ export const SuperAdminDash: React.FC = () => {
           // Play-In Picks
           if (leagueData.pointConfig?.playIn) {
             updatedPlayInPicks.forEach((p: any) => {
-              const res = seriesResults.find((r: any) => r.id === p.matchupId) as any;
+              const actualId = legacyMap[p.matchupId] || p.matchupId;
+              const res = seriesResults.find((r: any) => r.id === actualId) as any;
               if (res?.advancingTeamId) {
                 if (res.advancingTeamId === p.predictedWinnerId) {
                   p.status = PickStatus.CORRECT;
-                  s += (leagueData.pointConfig.playIn || 0);
+                  const points = Number(leagueData.pointConfig.playIn) || 0;
+                  s += points;
+                  currentRoundScores.playIn += points;
                 } else {
                   p.status = PickStatus.INCORRECT;
                 }
@@ -273,7 +317,8 @@ export const SuperAdminDash: React.FC = () => {
           score: s, 
           tiebreakerDiff: Math.abs((b.tiebreakerPrediction || 0) - actualFinalsPoints),
           updatedPicks,
-          updatedPlayInPicks
+          updatedPlayInPicks,
+          roundScores: currentRoundScores
         });
       }
 
@@ -288,7 +333,8 @@ export const SuperAdminDash: React.FC = () => {
             totalScore: item.score, 
             rank: i + idx + 1,
             picks: item.updatedPicks,
-            playInPicks: item.updatedPlayInPicks
+            playInPicks: item.updatedPlayInPicks,
+            roundScores: item.roundScores
           });
         });
         await scoreBatch.commit();
@@ -486,7 +532,7 @@ export const SuperAdminDash: React.FC = () => {
         setMessage({ type: 'warning', text: `Found ${syncData.games?.length || 0} games, but 0 updates were applied (already synced or no matchup match).` });
       } else {
         // Use the updated records for recalculation
-        await recalculateAllScores();
+        await recalculateAllScores(updatedSeries);
         await handleRecalculateProgression();
         setMessage({ type: 'success', text: `Successfully synced ${matchedCount} games and updated scores.` });
       }
@@ -887,35 +933,58 @@ export const SuperAdminDash: React.FC = () => {
           <p className="text-xs text-gray-500 font-medium">Use these during initial setup or to force updates.</p>
         </div>
         
-        {showInitConfirm ? (
-          <div className="flex items-center gap-2 animate-in fade-in zoom-in-95 duration-200">
-            <p className="text-[10px] font-bold text-orange-600 uppercase tracking-tighter">Reset all series to 0-0?</p>
-            <button 
-              onClick={() => {
-                handleInitializeSeries();
-                setShowInitConfirm(false);
-              }}
-              disabled={syncing}
-              className="px-4 py-2 bg-orange-600 text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-orange-700 transition-all shadow-lg shadow-orange-500/20"
-            >
-              Confirm
-            </button>
-            <button 
-              onClick={() => setShowInitConfirm(false)}
-              className="px-4 py-2 bg-black/5 hover:bg-black/10 text-gray-500 rounded-xl text-xs font-black uppercase tracking-widest transition-all"
-            >
-              Cancel
-            </button>
-          </div>
-        ) : (
+        <div className="flex items-center gap-2">
           <button 
-            onClick={() => setShowInitConfirm(true)}
+            onClick={async () => {
+              setSyncing(true);
+              setMessage({ type: 'info', text: 'Starting full manual recalculation...' });
+              try {
+                await recalculateAllScores();
+                await handleRecalculateProgression();
+                setMessage({ type: 'success', text: 'Full recalculation complete. All user brackets and scores are now up to date.' });
+              } catch (err: any) {
+                console.error("Recalc Error:", err);
+                setMessage({ type: 'error', text: 'Recalculation failed: ' + err.message });
+              } finally {
+                setSyncing(false);
+              }
+            }}
             disabled={syncing}
-            className="px-4 py-2 bg-white/50 hover:bg-white text-orange-600 border border-orange-200 rounded-xl text-xs font-black uppercase tracking-widest transition-all"
+            className="px-4 py-2 bg-white/50 hover:bg-white text-blue-600 border border-blue-200 rounded-xl text-xs font-black uppercase tracking-widest transition-all"
           >
-            Init Matchups
+            Force Recalculate Scores
           </button>
-        )}
+
+          {showInitConfirm ? (
+            <div className="flex items-center gap-2 animate-in fade-in zoom-in-95 duration-200">
+              <p className="text-[10px] font-bold text-orange-600 uppercase tracking-tighter">Reset all series to 0-0?</p>
+              <button 
+                onClick={() => {
+                  handleInitializeSeries();
+                  setShowInitConfirm(false);
+                }}
+                disabled={syncing}
+                className="px-4 py-2 bg-orange-600 text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-orange-700 transition-all shadow-lg shadow-orange-500/20"
+              >
+                Confirm
+              </button>
+              <button 
+                onClick={() => setShowInitConfirm(false)}
+                className="px-4 py-2 bg-black/5 hover:bg-black/10 text-gray-500 rounded-xl text-xs font-black uppercase tracking-widest transition-all"
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <button 
+              onClick={() => setShowInitConfirm(true)}
+              disabled={syncing}
+              className="px-4 py-2 bg-white/50 hover:bg-white text-orange-600 border border-orange-200 rounded-xl text-xs font-black uppercase tracking-widest transition-all"
+            >
+              Init Matchups
+            </button>
+          )}
+        </div>
       </div>
 
       {message && (

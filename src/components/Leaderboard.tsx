@@ -49,31 +49,49 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({ leagueId }) => {
     });
 
     // Rounds 1-Finals
+    const legacyMap: Record<string, string> = {
+      'R1_E_1': 'R1_E_1v8', 'R1_E_2': 'R1_E_4v5', 'R1_E_3': 'R1_E_3v6', 'R1_E_4': 'R1_E_2v7',
+      'R1_W_1': 'R1_W_1v8', 'R1_W_2': 'R1_W_4v5', 'R1_W_3': 'R1_W_3v6', 'R1_W_4': 'R1_W_2v7',
+      'R2_E_1': 'R2_E_M1', 'R2_E_2': 'R2_E_M2',
+      'R2_W_1': 'R2_W_M1', 'R2_W_2': 'R2_W_M2',
+      'CF_E': 'R3_E_CF', 'CF_W': 'R3_W_CF',
+      'FINALS': 'R4_Finals'
+    };
+
     bracket.picks?.forEach(p => {
-      const res = results[p.matchupId];
+      const actualId = legacyMap[p.matchupId] || p.matchupId;
+      const res = results[actualId];
       if (res?.advancingTeamId === p.predictedTeamId) {
         let pts = 0;
-        if (p.predictedRound === 1) {
-          pts = config.pointConfig.round1;
+        const round = p.predictedRound || (
+          actualId.startsWith('R1') ? 1 : 
+          actualId.startsWith('R2') ? 2 : 
+          actualId.startsWith('R3') ? 3 : 
+          (actualId.startsWith('R4') || actualId === 'FINALS') ? 4 : 
+          1
+        );
+
+        if (round === 1) {
+          pts = Number(config.pointConfig.round1) || 0;
           scores.r1 += pts;
-        } else if (p.predictedRound === 2) {
-          pts = config.pointConfig.round2;
+        } else if (round === 2) {
+          pts = Number(config.pointConfig.round2) || 0;
           scores.r2 += pts;
-        } else if (p.predictedRound === 3) {
-          pts = config.pointConfig.round3;
+        } else if (round === 3) {
+          pts = Number(config.pointConfig.round3) || 0;
           scores.cf += pts;
-        } else if (p.predictedRound === 4) {
-          pts = config.pointConfig.finals;
+        } else if (round === 4) {
+          pts = Number(config.pointConfig.finals) || 0;
           scores.finals += pts;
         }
 
         // Exact games bonus
         if (res.totalGamesPlayed === p.predictedSeriesLength) {
-          const bonus = config.pointConfig.exactGamesBonus || 0;
-          if (p.predictedRound === 1) scores.r1 += bonus;
-          else if (p.predictedRound === 2) scores.r2 += bonus;
-          else if (p.predictedRound === 3) scores.cf += bonus;
-          else if (p.predictedRound === 4) scores.finals += bonus;
+          const bonus = Number(config.pointConfig.exactGamesBonus) || 0;
+          if (round === 1) scores.r1 += bonus;
+          else if (round === 2) scores.r2 += bonus;
+          else if (round === 3) scores.cf += bonus;
+          else if (round === 4) scores.finals += bonus;
         }
       }
     });
@@ -287,7 +305,7 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({ leagueId }) => {
   };
 
   const getFinalsPrediction = (entry: LeaderboardEntry) => {
-    const finalsPick = entry.picks.find(p => p.matchupId === 'FINALS');
+    const finalsPick = entry.picks.find(p => p.matchupId === 'FINALS' || p.matchupId === 'R4_Finals');
     if (!finalsPick) return null;
 
     const winner = teams[finalsPick.predictedTeamId];
@@ -295,8 +313,8 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({ leagueId }) => {
 
     // To find the loser, we need to know who was in the Finals.
     // In our system, the Finals matchup is CF_E winner vs CF_W winner.
-    const cfEPick = entry.picks.find(p => p.matchupId === 'CF_E');
-    const cfWPick = entry.picks.find(p => p.matchupId === 'CF_W');
+    const cfEPick = entry.picks.find(p => p.matchupId === 'CF_E' || p.matchupId === 'R3_E_CF');
+    const cfWPick = entry.picks.find(p => p.matchupId === 'CF_W' || p.matchupId === 'R3_W_CF');
 
     if (!cfEPick || !cfWPick) return null;
 
