@@ -129,27 +129,46 @@ async function startServer() {
       if (!apiKey) throw new Error('RAPIDAPI_KEY not found in environment');
       
       // Attempt to hit a simple endpoint to verify key/connectivity
-      const response = await axios.get('https://nba-api-free-data.p.rapidapi.com/nba-conference-standings', {
+      const response = await fetchWithRetry({
+        url: 'https://nba-api-free-data.p.rapidapi.com/nba-conference-standings',
+        method: 'GET',
         headers: {
           'x-rapidapi-host': 'nba-api-free-data.p.rapidapi.com',
           'x-rapidapi-key': apiKey
-        }
+        },
+        timeout: 10000
       });
       
-      if (response.status === 200) {
+      if (response && response.status === 200) {
         res.json({ status: 'success', message: 'Successfully connected to RapidAPI NBA Service.' });
       } else {
-        res.status(response.status).json({ status: 'error', message: `API responded with status ${response.status}` });
+        res.status(response?.status || 500).json({ status: 'error', message: `API responded with status ${response?.status}` });
       }
     } catch (error: any) {
       console.error('API Test Error:', error.message);
-      if (error.response?.status === 429) {
+      const status = error.response?.status || 500;
+      
+      if (status === 429) {
         return res.status(429).json({ 
           status: 'error', 
           message: 'NBA API Quota Reached: You have exhausted your daily free requests. Please try again tomorrow or upgrade your plan.' 
         });
       }
-      res.status(500).json({ status: 'error', message: error.message, details: error.response?.data });
+      
+      if (status === 503) {
+        return res.status(503).json({
+          status: 'error',
+          message: 'NBA Data Service is temporarily unavailable (503). This usually means the provider is experiencing an outage. Try again later.'
+        });
+      }
+
+      res.status(status).json({ 
+        status: 'error', 
+        message: error.message, 
+        details: typeof error.response?.data === 'string' && error.response.data.includes('<!doctype') 
+          ? 'HTML Error Page Received' 
+          : error.response?.data 
+      });
     }
   });
 
@@ -173,13 +192,25 @@ async function startServer() {
       res.json({ status: 'success', games: results });
     } catch (error: any) {
       console.error('Proxy NBA Results Error:', error.message);
-      if (error.response?.status === 429) {
+      
+      const status = error.response?.status || 500;
+      const message = error.response?.data?.message || error.message;
+
+      if (status === 429) {
         return res.status(429).json({ 
           status: 'error', 
           message: 'NBA API Quota Reached: You have reached 100% of your free daily requests. Please wait until your quota resets tomorrow.' 
         });
       }
-      res.status(500).json({ status: 'error', message: error.message });
+      
+      if (status === 503) {
+        return res.status(503).json({
+          status: 'error',
+          message: 'NBA Data Service is temporarily unavailable (503). This is usually a temporary issue with the external provider. Please try again in a few minutes.'
+        });
+      }
+
+      res.status(status).json({ status: 'error', message: message });
     }
   });
 
@@ -189,13 +220,25 @@ async function startServer() {
       res.json({ status: 'success', updates });
     } catch (error: any) {
       console.error('Proxy NBA Standings Error:', error.message);
-      if (error.response?.status === 429) {
+      
+      const status = error.response?.status || 500;
+      const message = error.response?.data?.message || error.message;
+
+      if (status === 429) {
         return res.status(429).json({ 
           status: 'error', 
           message: 'NBA API Quota Reached: You have reached 100% of your free daily requests. Please wait until your quota resets tomorrow.' 
         });
       }
-      res.status(500).json({ status: 'error', message: error.message });
+
+      if (status === 503) {
+        return res.status(503).json({
+          status: 'error',
+          message: 'NBA Data Service is temporarily unavailable (503). This is usually a temporary issue with the external provider. Please try again in a few minutes.'
+        });
+      }
+
+      res.status(status).json({ status: 'error', message: message });
     }
   });
 
@@ -251,6 +294,40 @@ async function startServer() {
 // Sync Workers & Helpers
 // ===============================================================
 
+async function fetchWithRetry(config: any, retries = 3, delay = 1500) {
+  for (let i = 0; i <= retries; i++) {
+    try {
+      const response = await axios(config);
+      
+      // Check if response is HTML when we expected JSON
+      const contentType = response.headers?.['content-type'] || '';
+      if (typeof response.data === 'string' && response.data.trim().startsWith('<!doctype') && !contentType.includes('text/html')) {
+        console.warn(`Fetch attempt ${i + 1}: Received HTML instead of JSON. Possible service outage page.`);
+        throw new Error('NBA Data Service returned an HTML error page instead of JSON data.');
+      }
+      
+      return response;
+    } catch (err: any) {
+      const status = err.response?.status;
+      const isStatusRetryable = status === 503 || status === 502 || status === 504 || err.code === 'ECONNABORTED';
+      
+      if (isStatusRetryable && i < retries) {
+        console.warn(`Fetch attempt ${i + 1} failed with ${status || err.code}. Retrying in ${delay}ms...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        delay *= 1.5; // Exponential backoff
+        continue;
+      }
+      
+      // If we get here and it's the last retry or not retryable
+      if (err.response?.data && typeof err.response.data === 'string' && err.response.data.includes('<!doctype')) {
+        err.message = `${err.message} (Note: Service returned an HTML error page)`;
+      }
+      
+      throw err;
+    }
+  }
+}
+
 async function fetchNbaStandingsData() {
   const apiKey = process.env.RAPIDAPI_KEY;
   if (!apiKey) throw new Error('RAPIDAPI_KEY not found');
@@ -265,13 +342,16 @@ async function fetchNbaStandingsData() {
   const errors: string[] = [];
   for (const url of endpoints) {
     try {
-      response = await axios.get(url, {
+      response = await fetchWithRetry({
+        url,
+        method: 'GET',
         headers: {
           'x-rapidapi-host': 'nba-api-free-data.p.rapidapi.com',
           'x-rapidapi-key': apiKey
-        }
+        },
+        timeout: 10000
       });
-      if (response.status === 200 && response.data?.status === 'success') break;
+      if (response && response.status === 200 && response.data?.status === 'success') break;
     } catch (err: any) {
       errors.push(`${url}: ${err.message}`);
       response = null;
@@ -330,15 +410,18 @@ async function fetchNbaResultsData(dbInstance?: admin.firestore.Firestore, speci
     dateStr = yesterday.toISOString().split('T')[0].replace(/-/g, '');
   }
 
-  const response = await axios.get('https://nba-api-free-data.p.rapidapi.com/nba-scoreboard-by-date', {
+  const response = await fetchWithRetry({
+    url: 'https://nba-api-free-data.p.rapidapi.com/nba-scoreboard-by-date',
+    method: 'GET',
     params: { date: dateStr },
     headers: {
       'x-rapidapi-host': 'nba-api-free-data.p.rapidapi.com',
       'x-rapidapi-key': apiKey
-    }
+    },
+    timeout: 15000
   });
 
-  const rawGames = response.data?.response?.Events || 
+  const rawGames = response?.data?.response?.Events || 
                    response.data?.response?.events || 
                    response.data?.events || 
                    response.data?.scoreboard?.events || [];
@@ -642,22 +725,58 @@ async function recalculateAllLeagues(db: admin.firestore.Firestore, force: boole
 async function calculateLeagueScores(db: admin.firestore.Firestore, leagueId: string, leagueData: any) {
   const seriesResults = (await db.collection('seriesResults').get()).docs.map(d => ({ id: d.id, ...d.data() } as any));
   const brackets = (await db.collection('brackets').where('leagueId', '==', leagueId).get()).docs;
-  const scores: { id: string, score: number, tiebreakerDiff: number, updatedPicks: any[], updatedPlayInPicks: any[] }[] = [];
+  
+  const legacyMap: Record<string, string> = {
+    'R1_E_1': 'R1_E_1v8', 'R1_E_2': 'R1_E_4v5', 'R1_E_3': 'R1_E_3v6', 'R1_E_4': 'R1_E_2v7',
+    'R1_W_1': 'R1_W_1v8', 'R1_W_2': 'R1_W_4v5', 'R1_W_3': 'R1_W_3v6', 'R1_W_4': 'R1_W_2v7',
+    'R2_E_1': 'R2_E_M1', 'R2_E_2': 'R2_E_M2',
+    'R2_W_1': 'R2_W_M1', 'R2_W_2': 'R2_W_M2',
+    'CF_E': 'R3_E_CF', 'CF_W': 'R3_W_CF',
+    'FINALS': 'R4_Finals'
+  };
+
+  const scores: { id: string, score: number, tiebreakerDiff: number, updatedPicks: any[], updatedPlayInPicks: any[], roundScores: any }[] = [];
 
   for (const doc of brackets) {
     const b = doc.data();
     let s = 0;
+    const currentRoundScores = { playIn: 0, r1: 0, r2: 0, cf: 0, finals: 0 };
     const updatedPicks = Array.isArray(b.picks) ? [...b.picks] : [];
     const updatedPlayInPicks = Array.isArray(b.playInPicks) ? [...b.playInPicks] : [];
 
     if (leagueData.pointConfig) {
       updatedPicks.forEach((p: any) => {
-        const res = seriesResults.find(r => r.id === p.matchupId);
+        const actualId = legacyMap[p.matchupId] || p.matchupId;
+        const res = seriesResults.find(r => r.id === actualId);
+        
         if (res?.advancingTeamId) {
+          const round = p.predictedRound || (
+            actualId.startsWith('R1') ? 1 : 
+            actualId.startsWith('R2') ? 2 : 
+            actualId.startsWith('R3') ? 3 : 
+            (actualId.startsWith('R4') || actualId === 'FINALS') ? 4 : 
+            1
+          );
+
           if (res.advancingTeamId === p.predictedTeamId) {
             p.status = PickStatus.CORRECT;
-            s += (leagueData.pointConfig[`round${p.predictedRound}`] || 0);
-            if (res.totalGamesPlayed === p.predictedSeriesLength) s += (leagueData.pointConfig.exactGamesBonus || 0);
+            const roundKey = round === 4 ? 'finals' : `round${round}`;
+            const points = Number(leagueData.pointConfig?.[roundKey]) || 0;
+            s += points;
+            
+            if (round === 1) currentRoundScores.r1 += points;
+            else if (round === 2) currentRoundScores.r2 += points;
+            else if (round === 3) currentRoundScores.cf += points;
+            else if (round === 4) currentRoundScores.finals += points;
+
+            if (res.totalGamesPlayed === p.predictedSeriesLength) {
+              const bonus = (Number(leagueData.pointConfig?.exactGamesBonus) || 0);
+              s += bonus;
+              if (round === 1) currentRoundScores.r1 += bonus;
+              else if (round === 2) currentRoundScores.r2 += bonus;
+              else if (round === 3) currentRoundScores.cf += bonus;
+              else if (round === 4) currentRoundScores.finals += bonus;
+            }
           } else {
             p.status = PickStatus.INCORRECT;
           }
@@ -669,11 +788,14 @@ async function calculateLeagueScores(db: admin.firestore.Firestore, leagueId: st
       // Add Play-In scoring
       if (leagueData.pointConfig.playIn) {
         updatedPlayInPicks.forEach((p: any) => {
-          const res = seriesResults.find(r => r.id === p.matchupId);
+          const actualId = legacyMap[p.matchupId] || p.matchupId;
+          const res = seriesResults.find(r => r.id === actualId);
           if (res?.advancingTeamId) {
             if (res.advancingTeamId === p.predictedWinnerId) {
               p.status = PickStatus.CORRECT;
-              s += (leagueData.pointConfig.playIn || 0);
+              const points = Number(leagueData.pointConfig.playIn) || 0;
+              s += points;
+              currentRoundScores.playIn += points;
             } else {
               p.status = PickStatus.INCORRECT;
             }
@@ -684,13 +806,16 @@ async function calculateLeagueScores(db: admin.firestore.Firestore, leagueId: st
       }
     }
 
-    const actualPoints = seriesResults.find(r => r.round === 4)?.actualFinalsTotalPoints || 0;
+    const actualFinalsRes = seriesResults.find(r => r.id === 'R4_Finals' || r.id === 'FINALS');
+    const actualPoints = actualFinalsRes?.actualFinalsTotalPoints || 0;
+
     scores.push({ 
       id: doc.id, 
       score: s, 
-      tiebreakerDiff: Math.abs(b.tiebreakerPrediction - actualPoints),
+      tiebreakerDiff: Math.abs((b.tiebreakerPrediction || 0) - actualPoints),
       updatedPicks,
-      updatedPlayInPicks
+      updatedPlayInPicks,
+      roundScores: currentRoundScores
     });
   }
 
@@ -703,7 +828,8 @@ async function calculateLeagueScores(db: admin.firestore.Firestore, leagueId: st
         totalScore: item.score, 
         rank: i + idx + 1,
         picks: item.updatedPicks,
-        playInPicks: item.updatedPlayInPicks
+        playInPicks: item.updatedPlayInPicks,
+        roundScores: item.roundScores
       });
     });
     await batch.commit();

@@ -513,11 +513,22 @@ export const SuperAdminDash: React.FC = () => {
     try {
       const url = syncDate ? `/api/proxy/nba-results?date=${syncDate.replace(/-/g, '')}` : '/api/proxy/nba-results';
       const syncRes = await fetch(url);
-      const syncData = await syncRes.json();
+      
+      const contentType = syncRes.headers.get('content-type');
+      let syncData;
+      if (contentType && contentType.includes('application/json')) {
+        syncData = await syncRes.json();
+      } else {
+        const text = await syncRes.text();
+        throw new Error(`NBA Service Error (${syncRes.status}): Server returned unexpected response format. This usually means the service is down.`);
+      }
       
       if (!syncRes.ok) {
         if (syncRes.status === 429) {
           throw new Error(syncData.message || 'NBA API Quota Reached. Please try again tomorrow.');
+        }
+        if (syncRes.status === 503) {
+          throw new Error(syncData.message || 'NBA Data Service is temporarily unavailable. Please try again in 5-10 minutes.');
         }
         throw new Error(syncData.message || `Request failed with status ${syncRes.status}`);
       }
@@ -550,7 +561,16 @@ export const SuperAdminDash: React.FC = () => {
     setMessage(null);
     try {
       const res = await fetch('/api/admin/test-api-connection');
-      const data = await res.json();
+      const contentType = res.headers.get('content-type');
+      
+      let data;
+      if (contentType && contentType.includes('application/json')) {
+        data = await res.json();
+      } else {
+        const text = await res.text();
+        throw new Error(`Server returned non-JSON response (${res.status}): ${text.substring(0, 100)}...`);
+      }
+
       if (data.status === 'success') {
         setMessage({ type: 'success', text: data.message });
       } else {
@@ -558,7 +578,7 @@ export const SuperAdminDash: React.FC = () => {
       }
     } catch (error) {
       console.error("API Test Error:", error);
-      setMessage({ type: 'error', text: 'Failed to run API test.' });
+      setMessage({ type: 'error', text: `API Test Error: ${error instanceof Error ? error.message : 'Unknown error'}` });
     } finally {
       setTestingApi(false);
     }
@@ -603,11 +623,22 @@ export const SuperAdminDash: React.FC = () => {
     setMessage(null);
     try {
       const res = await fetch('/api/proxy/nba-standings', { method: 'GET' });
-      const data = await res.json();
+      
+      const contentType = res.headers.get('content-type');
+      let data;
+      if (contentType && contentType.includes('application/json')) {
+        data = await res.json();
+      } else {
+        const text = await res.text();
+        throw new Error(`NBA Service Error (${res.status}): Server returned unexpected response format. This usually means the service is down.`);
+      }
       
       if (!res.ok) {
         if (res.status === 429) {
           throw new Error(data.message || 'NBA API Quota Reached. Please try again tomorrow.');
+        }
+        if (res.status === 503) {
+          throw new Error(data.message || 'NBA Data Service is temporarily unavailable. Please try again in 5-10 minutes.');
         }
         throw new Error(data.message || `Request failed with status ${res.status}`);
       }
