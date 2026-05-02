@@ -340,7 +340,7 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({ leagueId }) => {
           <span className="text-[10px] font-black uppercase tracking-widest text-orange-500">UI Preview Mode (Mock Data)</span>
         </div>
       )}
-      <div className="flex items-center justify-between px-6 py-2 text-[10px] font-black uppercase tracking-widest text-gray-500">
+      <div className="flex items-center justify-between px-6 py-2 text-[11px] font-black uppercase tracking-widest text-gray-500">
         <div className="flex items-center gap-8">
           <span className="w-8">Rank</span>
           <span>Participant</span>
@@ -456,7 +456,7 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({ leagueId }) => {
               </div>
 
               <div className="flex items-center gap-6">
-                <div className="grid grid-cols-5 gap-4 w-60 text-center text-[11px] font-bold font-mono">
+                <div className="grid grid-cols-5 gap-4 w-60 text-center text-sm font-bold font-mono">
                   <span className={entry.roundScores.playIn > 0 ? 'text-gray-900' : 'text-gray-300'}>{entry.roundScores.playIn}</span>
                   <span className={entry.roundScores.r1 > 0 ? 'text-gray-900' : 'text-gray-300'}>{entry.roundScores.r1}</span>
                   <span className={entry.roundScores.r2 > 0 ? 'text-gray-900' : 'text-gray-300'}>{entry.roundScores.r2}</span>

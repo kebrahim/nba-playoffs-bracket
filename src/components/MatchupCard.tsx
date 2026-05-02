@@ -17,6 +17,7 @@ interface MatchupCardProps {
   };
   onPick?: (teamId: string, length: number) => void;
   isLocked?: boolean;
+  isCompact?: boolean;
 }
 
 export const MatchupCard: React.FC<MatchupCardProps> = ({
@@ -26,7 +27,8 @@ export const MatchupCard: React.FC<MatchupCardProps> = ({
   userPick,
   actualResult,
   onPick,
-  isLocked
+  isLocked,
+  isCompact = false
 }) => {
   const getDerivedStatus = () => {
     if (!userPick) return PickStatus.PENDING;
@@ -70,10 +72,11 @@ export const MatchupCard: React.FC<MatchupCardProps> = ({
   const lengthCorrect = isCorrect && actualResult?.totalGamesPlayed === userPick?.predictedSeriesLength;
   const lengthFinished = actualResult?.advancingTeamId && actualResult.totalGamesPlayed !== undefined;
 
-  const getStatusIcon = () => {
-    if (status === PickStatus.PENDING) return <MinusCircle className="w-4 h-4 text-gray-500" />;
-    if (status === PickStatus.CORRECT) return <CheckCircle2 className="w-4 h-4 text-green-500" />;
-    return <XCircle className="w-4 h-4 text-red-500" />;
+  const getStatusIcon = (small = false) => {
+    const sizeCls = small ? "w-3 h-3" : "w-4 h-4";
+    if (status === PickStatus.PENDING) return <MinusCircle className={`${sizeCls} text-gray-500`} />;
+    if (status === PickStatus.CORRECT) return <CheckCircle2 className={`${sizeCls} text-green-500`} />;
+    return <XCircle className={`${sizeCls} text-red-500`} />;
   };
 
   const isEliminated = (teamId: string) => {
@@ -88,6 +91,54 @@ export const MatchupCard: React.FC<MatchupCardProps> = ({
     if (!userPick) return false;
     return (userPick.predictedTeamId === teamId || userPick.predictedWinnerId === teamId);
   };
+
+  if (isCompact) {
+    return (
+      <div className={`w-28 bg-white/70 backdrop-blur-md border rounded-lg overflow-hidden shadow-md transition-all ${
+        isCorrect ? 'border-green-500/30' : isIncorrect ? 'border-red-500/30' : 'border-black/10'
+      }`}>
+        <div className={`px-2 py-1 flex items-center justify-between text-[10px] ${
+          isPicked(team1?.id || '') 
+            ? (isCorrect ? 'bg-green-500/10' : isIncorrect ? 'bg-red-500/5' : 'bg-orange-500/10') 
+            : ''
+        }`}>
+          <div className="flex items-center gap-1 truncate">
+            <span className="text-[8px] font-bold text-gray-400 w-2.5">{team1?.seed}</span>
+            <span className={`font-bold truncate ${isEliminated(team1?.id || '') ? 'line-through opacity-40' : ''} ${isWinner(team1?.id || '') ? (isPicked(team1?.id || '') && isCorrect ? 'text-green-600' : 'text-orange-500') : ''}`}>
+              {getAbbreviation(team1)}
+            </span>
+          </div>
+          {isPicked(team1?.id || '') && (
+            <div className={`w-1 h-1 rounded-full ${isCorrect ? 'bg-green-500' : isIncorrect ? 'bg-red-500' : 'bg-orange-500'}`} />
+          )}
+        </div>
+        <div className="h-px bg-black/5" />
+        <div className={`px-2 py-1 flex items-center justify-between text-[10px] ${
+          isPicked(team2?.id || '') 
+            ? (isCorrect ? 'bg-green-500/10' : isIncorrect ? 'bg-red-500/5' : 'bg-orange-500/10') 
+            : ''
+        }`}>
+          <div className="flex items-center gap-1 truncate">
+            <span className="text-[8px] font-bold text-gray-400 w-2.5">{team2?.seed}</span>
+            <span className={`font-bold truncate ${isEliminated(team2?.id || '') ? 'line-through opacity-40' : ''} ${isWinner(team2?.id || '') ? (isPicked(team2?.id || '') && isCorrect ? 'text-green-600' : 'text-orange-500') : ''}`}>
+              {getAbbreviation(team2)}
+            </span>
+          </div>
+          {isPicked(team2?.id || '') && (
+            <div className={`w-1 h-1 rounded-full ${isCorrect ? 'bg-green-500' : isIncorrect ? 'bg-red-500' : 'bg-orange-500'}`} />
+          )}
+        </div>
+        <div className="bg-black/5 px-2 py-0.5 flex items-center gap-1.5 border-t border-black/5">
+           {getStatusIcon(true)}
+           <span className={`text-[8px] font-black uppercase tracking-tighter ${
+              isCorrect ? 'text-green-600' : isIncorrect ? 'text-red-600' : 'text-gray-500'
+            }`}>
+              {status === PickStatus.PENDING ? 'FINAL' : status}
+            </span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="relative group w-48">

@@ -114,20 +114,20 @@ export const TournamentBracket: React.FC<TournamentBracketProps> = ({
     const cf = { t1: getWinner(`R2_${c}_M1`), t2: getWinner(`R2_${c}_M2`), id: `R3_${c}_CF` };
 
     return (
-      <div className="flex flex-col lg:flex-row gap-12 items-center justify-center py-8">
+      <div className="flex flex-col lg:flex-row gap-8 items-center justify-center py-4">
         {/* Play-In Section */}
-        <div className="bg-white/70 backdrop-blur-xl p-8 rounded-[2.5rem] border border-black/10 w-full lg:w-auto shadow-2xl relative overflow-hidden">
-          <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-orange-500/20 to-transparent" />
-          <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-gray-500 mb-8 text-center lg:text-left">Play-In Tournament</h3>
+        <div className="bg-white/50 backdrop-blur-xl p-4 lg:p-6 rounded-[2rem] border border-black/5 w-full lg:w-auto shadow-xl relative overflow-hidden">
+          <div className="absolute top-0 left-0 w-full h-0.5 bg-gradient-to-r from-transparent via-orange-500/10 to-transparent" />
+          <h3 className="text-[9px] font-black uppercase tracking-[0.2em] text-gray-400 mb-4 text-center lg:text-left">Play-In</h3>
           
-          <div className="flex flex-col sm:flex-row items-center gap-12 relative">
+          <div className="flex flex-col sm:flex-row items-center sm:justify-center gap-2 sm:gap-4 relative">
             {/* Game 1 & 2 Column */}
-            <div className="flex flex-col gap-12 relative">
+            <div className="flex flex-col gap-4 relative text-center">
               {/* Game 2 (9 vs 10) */}
-              <div className="relative w-48">
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="text-[8px] font-black uppercase tracking-widest text-orange-500 bg-orange-500/10 px-2 py-0.5 rounded">Game 2</span>
-                  <span className="text-[8px] font-bold text-gray-400 uppercase tracking-widest">9 vs 10</span>
+              <div className="relative w-28">
+                <div className="flex items-center justify-center gap-1.5 mb-1">
+                  <span className="text-[7px] font-black uppercase tracking-widest text-orange-500 bg-orange-500/5 px-1.5 py-0.5 rounded">G2</span>
+                  <span className="text-[7px] font-bold text-gray-400 uppercase tracking-widest">9v10</span>
                 </div>
                 <div className="relative">
                   <MatchupCard 
@@ -138,21 +138,20 @@ export const TournamentBracket: React.FC<TournamentBracketProps> = ({
                     actualResult={getResult(`PI_${c}_B`)}
                     onPick={(teamId, len) => onPick(`PI_${c}_B`, teamId, len)}
                     isLocked={isLocked}
+                    isCompact={true}
                   />
                   
                   {/* Winner to Game 3 Connector */}
-                  <div className="absolute -right-8 top-1/2 -translate-y-1/2 flex items-center text-orange-500/40">
-                    <CornerDownRight className="w-6 h-6" />
-                    <span className="text-[7px] font-bold uppercase tracking-tighter ml-1">Winner</span>
+                  <div className="absolute -right-4 top-1/2 -translate-y-1/2 flex items-center text-orange-500/20">
+                    <CornerDownRight className="w-3.5 h-3.5" />
                   </div>
                 </div>
               </div>
-
               {/* Game 1 (7 vs 8) */}
-              <div className="relative w-48">
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="text-[8px] font-black uppercase tracking-widest text-orange-500 bg-orange-500/10 px-2 py-0.5 rounded">Game 1</span>
-                  <span className="text-[8px] font-bold text-gray-400 uppercase tracking-widest">7 vs 8</span>
+              <div className="relative w-28">
+                <div className="flex items-center justify-center gap-1.5 mb-1">
+                  <span className="text-[7px] font-black uppercase tracking-widest text-orange-500 bg-orange-500/5 px-1.5 py-0.5 rounded">G1</span>
+                  <span className="text-[7px] font-bold text-gray-400 uppercase tracking-widest">7v8</span>
                 </div>
                 <div className="relative">
                   <MatchupCard 
@@ -163,31 +162,22 @@ export const TournamentBracket: React.FC<TournamentBracketProps> = ({
                     actualResult={getResult(`PI_${c}_A`)}
                     onPick={(teamId, len) => onPick(`PI_${c}_A`, teamId, len)}
                     isLocked={isLocked}
+                    isCompact={true}
                   />
                   
-                  {/* Winner to 7th Indicator */}
-                  <div className="absolute -right-8 top-1/2 -translate-y-1/2 flex items-center gap-1 text-orange-500">
-                    <ArrowRight className="w-4 h-4" />
-                    <div className="hidden lg:block absolute left-6 whitespace-nowrap">
-                      <span className="text-[7px] font-black uppercase tracking-tighter bg-orange-500 text-white px-1.5 py-0.5 rounded shadow-sm">Winner to 7th Seed</span>
-                    </div>
-                  </div>
-
                   {/* Loser to Game 3 Connector */}
-                  <div className="absolute -right-8 top-1/2 -translate-y-1/2 flex items-center text-gray-400/40 translate-y-6">
-                    <CornerUpRight className="w-6 h-6" />
-                    <span className="text-[7px] font-bold uppercase tracking-tighter ml-1">Loser to Game 3</span>
+                  <div className="absolute -right-4 top-1/2 -translate-y-1/2 flex items-center text-gray-400/20 translate-y-3">
+                    <CornerUpRight className="w-3.5 h-3.5" />
                   </div>
                 </div>
               </div>
             </div>
 
             {/* Game 3 Column */}
-            <div className="flex flex-col justify-center w-48">
-              <div className="relative w-48">
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="text-[8px] font-black uppercase tracking-widest text-orange-500 bg-orange-500/10 px-2 py-0.5 rounded">Game 3</span>
-                  <span className="text-[7px] font-black uppercase tracking-tighter bg-orange-500 text-white px-1.5 py-0.5 rounded shadow-sm">Winner to 8th Seed</span>
+            <div className="flex flex-col justify-center w-28 pt-2 sm:pt-0">
+              <div className="relative w-28">
+                <div className="flex items-center justify-center gap-1.5 mb-1">
+                  <span className="text-[7px] font-black uppercase tracking-widest text-orange-500 bg-orange-500/5 px-1.5 py-0.5 rounded">G3</span>
                 </div>
                 <div className="relative">
                   <MatchupCard 
@@ -198,15 +188,8 @@ export const TournamentBracket: React.FC<TournamentBracketProps> = ({
                     actualResult={getResult(`PI_${c}_C`)}
                     onPick={(teamId, len) => onPick(`PI_${c}_C`, teamId, len)}
                     isLocked={isLocked}
+                    isCompact={true}
                   />
-                  
-                  {/* Winner to 8th Indicator */}
-                  <div className="absolute -right-8 top-1/2 -translate-y-1/2 flex items-center gap-1 text-orange-500">
-                    <ArrowRight className="w-4 h-4" />
-                    <div className="hidden lg:block absolute left-6 whitespace-nowrap">
-                      <span className="text-[7px] font-black uppercase tracking-tighter bg-orange-500 text-white px-1.5 py-0.5 rounded shadow-sm">Winner to 8th Seed</span>
-                    </div>
-                  </div>
                 </div>
               </div>
             </div>
