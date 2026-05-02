@@ -60,8 +60,17 @@ export const MatchupCard: React.FC<MatchupCardProps> = ({
     }
   };
 
+  const status = getDerivedStatus();
+  const isCorrect = status === PickStatus.CORRECT;
+  const isIncorrect = status === PickStatus.INCORRECT;
+  
+  const pickedId = userPick?.predictedTeamId || userPick?.predictedWinnerId;
+  const actualId = actualResult?.advancingTeamId;
+  
+  const lengthCorrect = isCorrect && actualResult?.totalGamesPlayed === userPick?.predictedSeriesLength;
+  const lengthFinished = actualResult?.advancingTeamId && actualResult.totalGamesPlayed !== undefined;
+
   const getStatusIcon = () => {
-    const status = getDerivedStatus();
     if (status === PickStatus.PENDING) return <MinusCircle className="w-4 h-4 text-gray-500" />;
     if (status === PickStatus.CORRECT) return <CheckCircle2 className="w-4 h-4 text-green-500" />;
     return <XCircle className="w-4 h-4 text-red-500" />;
@@ -77,27 +86,35 @@ export const MatchupCard: React.FC<MatchupCardProps> = ({
 
   const isPicked = (teamId: string) => {
     if (!userPick) return false;
-    return userPick.predictedTeamId === teamId || userPick.predictedWinnerId === teamId;
+    return (userPick.predictedTeamId === teamId || userPick.predictedWinnerId === teamId);
   };
 
   return (
     <div className="relative group w-48">
       {/* Glassmorphism Container */}
-      <div className="w-full bg-white/70 backdrop-blur-xl border border-black/10 rounded-xl overflow-hidden shadow-2xl transition-all hover:border-orange-500/50">
+      <div className={`w-full bg-white/70 backdrop-blur-xl border rounded-xl overflow-hidden shadow-2xl transition-all ${
+        isCorrect ? 'border-green-500/30' : isIncorrect ? 'border-red-500/30' : 'border-black/10 hover:border-orange-500/50'
+      }`}>
         {/* Team 1 */}
         <div 
           onClick={() => !isLocked && team1 && onPick?.(team1.id, 4)}
           className={`p-3 flex items-center justify-between cursor-pointer transition-colors ${
-            isPicked(team1?.id || '') ? 'bg-orange-500/20' : 'hover:bg-black/5'
+            isPicked(team1?.id || '') 
+              ? (isCorrect ? 'bg-green-500/20' : isIncorrect ? 'bg-red-500/10' : 'bg-orange-500/20') 
+              : 'hover:bg-black/5'
           } ${isLocked ? 'cursor-default' : ''}`}
         >
           <div className="flex items-center gap-2 overflow-hidden flex-1">
             <span className="text-[10px] font-bold text-gray-500 w-3">{team1?.seed}</span>
-            <span className={`text-sm font-bold truncate ${isEliminated(team1?.id || '') ? 'line-through opacity-40' : ''} ${isWinner(team1?.id || '') ? 'text-orange-500' : ''}`}>
+            <span className={`text-sm font-bold truncate ${isEliminated(team1?.id || '') ? 'line-through opacity-40' : ''} ${isWinner(team1?.id || '') ? (isPicked(team1?.id || '') && isCorrect ? 'text-green-600' : 'text-orange-500') : ''}`}>
               {getAbbreviation(team1)}
             </span>
           </div>
-          {isPicked(team1?.id || '') && <div className="w-1.5 h-1.5 rounded-full bg-orange-500 shadow-[0_0_8px_rgba(245,132,38,0.8)]" />}
+          {isPicked(team1?.id || '') && (
+            <div className={`w-1.5 h-1.5 rounded-full shadow-lg ${
+              isCorrect ? 'bg-green-500' : isIncorrect ? 'bg-red-500' : 'bg-orange-500'
+            }`} />
+          )}
         </div>
 
         <div className="h-px bg-black/5 mx-2" />
@@ -106,16 +123,22 @@ export const MatchupCard: React.FC<MatchupCardProps> = ({
         <div 
           onClick={() => !isLocked && team2 && onPick?.(team2.id, 4)}
           className={`p-3 flex items-center justify-between cursor-pointer transition-colors ${
-            isPicked(team2?.id || '') ? 'bg-orange-500/20' : 'hover:bg-black/5'
+            isPicked(team2?.id || '') 
+              ? (isCorrect ? 'bg-green-500/20' : isIncorrect ? 'bg-red-500/10' : 'bg-orange-500/20') 
+              : 'hover:bg-black/5'
           } ${isLocked ? 'cursor-default' : ''}`}
         >
           <div className="flex items-center gap-2 overflow-hidden flex-1">
             <span className="text-[10px] font-bold text-gray-500 w-3">{team2?.seed}</span>
-            <span className={`text-sm font-bold truncate ${isEliminated(team2?.id || '') ? 'line-through opacity-40' : ''} ${isWinner(team2?.id || '') ? 'text-orange-500' : ''}`}>
+            <span className={`text-sm font-bold truncate ${isEliminated(team2?.id || '') ? 'line-through opacity-40' : ''} ${isWinner(team2?.id || '') ? (isPicked(team2?.id || '') && isCorrect ? 'text-green-600' : 'text-orange-500') : ''}`}>
               {getAbbreviation(team2)}
             </span>
           </div>
-          {isPicked(team2?.id || '') && <div className="w-1.5 h-1.5 rounded-full bg-orange-500 shadow-[0_0_8px_rgba(245,132,38,0.8)]" />}
+          {isPicked(team2?.id || '') && (
+            <div className={`w-1.5 h-1.5 rounded-full shadow-lg ${
+              isCorrect ? 'bg-green-500' : isIncorrect ? 'bg-red-500' : 'bg-orange-500'
+            }`} />
+          )}
         </div>
 
         {/* Status Footer */}
@@ -123,7 +146,9 @@ export const MatchupCard: React.FC<MatchupCardProps> = ({
           <div className="bg-black/5 px-3 py-1.5 flex items-center justify-between border-t border-black/5">
             <div className="flex items-center gap-1.5">
               {getStatusIcon()}
-              <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500">
+              <span className={`text-[10px] font-bold uppercase tracking-wider ${
+                isCorrect ? 'text-green-600' : isIncorrect ? 'text-red-600' : 'text-gray-500'
+              }`}>
                 {getSeriesProgressLabel()}
               </span>
             </div>
@@ -148,12 +173,19 @@ export const MatchupCard: React.FC<MatchupCardProps> = ({
               </div>
             )}
             {userPick && isLocked && !matchupId.startsWith('PI_') && (
-              <span className="text-[10px] font-black text-orange-500/80 italic">
+              <span className={`text-[10px] font-black italic ${
+                lengthCorrect 
+                  ? 'text-green-600' 
+                  : (isCorrect && lengthFinished) 
+                    ? 'text-red-500 line-through' 
+                    : 'text-orange-500/80'
+              }`}>
                 IN {userPick.predictedSeriesLength}
               </span>
             )}
           </div>
         )}
+      
       </div>
     </div>
   );

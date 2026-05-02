@@ -25,7 +25,7 @@ interface LeaderboardEntry extends Bracket {
 export const Leaderboard: React.FC<LeaderboardProps> = ({ leagueId }) => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { isAdmin } = useAuth();
+  const { user, isAdmin } = useAuth();
   const isPreview = new URLSearchParams(location.search).get('preview') === 'true';
   
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
@@ -370,8 +370,12 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({ leagueId }) => {
             <div 
               key={entry.id}
               onClick={() => navigate(`/league/${leagueId}/user/${entry.userId}`)}
-              className={`group relative flex items-center justify-between px-6 py-4 bg-white/60 backdrop-blur-xl border border-black/5 rounded-2xl transition-all duration-500 cursor-pointer hover:border-orange-500/50 hover:bg-black/5 ${
-                rank === 1 ? 'bg-gradient-to-r from-orange-500/10 to-transparent border-orange-500/20' : ''
+              className={`group relative flex items-center justify-between px-6 py-4 bg-white/60 backdrop-blur-xl border rounded-2xl transition-all duration-500 cursor-pointer hover:bg-black/5 ${
+                entry.userId === user?.uid 
+                  ? 'border-orange-500/40 bg-orange-500/5 shadow-lg shadow-orange-500/5' 
+                  : rank === 1 
+                    ? 'bg-gradient-to-r from-orange-500/10 to-transparent border-orange-500/20' 
+                    : 'border-black/5 hover:border-orange-500/50'
               }`}
             >
               <div className="flex items-center gap-8">
@@ -388,9 +392,14 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({ leagueId }) => {
                 </div>
                 <div className="flex flex-col">
                   <div className="flex items-center gap-2">
-                    <span className="font-bold uppercase italic tracking-tight group-hover:text-orange-500 transition-colors">
+                    <span className={`font-bold uppercase italic tracking-tight group-hover:text-orange-500 transition-colors ${entry.userId === user?.uid ? 'text-orange-600' : ''}`}>
                       {entry.userName}
                     </span>
+                    {entry.userId === user?.uid && (
+                      <span className="text-[8px] font-black uppercase tracking-widest text-white bg-orange-500 px-1.5 py-0.5 rounded ml-2 shadow-sm">
+                        You
+                      </span>
+                    )}
                     {isAdmin && (
                       <div className="flex items-center gap-1.5 ml-2">
                         {(() => {

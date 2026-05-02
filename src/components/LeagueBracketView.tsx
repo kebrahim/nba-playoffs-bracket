@@ -149,12 +149,12 @@ export const LeagueBracketView: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'bracket' | 'leaderboard'>('leaderboard');
 
   useEffect(() => {
-    if (isViewingSelf) {
-      setActiveTab('leaderboard');
-    } else {
+    if (paramUserId) {
       setActiveTab('bracket');
+    } else {
+      setActiveTab('leaderboard');
     }
-  }, [isViewingSelf, leagueId]);
+  }, [paramUserId, leagueId]);
   const [pendingBracket, setPendingBracket] = useState<Bracket | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [isLocked, setIsLocked] = useState(false);
